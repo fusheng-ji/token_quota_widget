@@ -1,23 +1,25 @@
-# Cursor + Codex
+# AI Token Quota Widget
 
-A native macOS menu-bar app and Widget for the two numbers that are easy to
-lose track of while working:
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![Swift 5.0 / 6.0](https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&logo=swift&logoColor=white)](https://www.swift.org/)
+[![Version 4.0](https://img.shields.io/badge/version-4.0-4C7CF3?style=flat-square)](https://github.com/fusheng-ji/token_quota_widget)
+[![MIT License](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
 
-- Codex tokens used today across local sessions.
-- Cursor's actual charge for each model call made today.
+AI Token Quota Widget is a native macOS menu-bar utility and WidgetKit
+extension that keeps Codex token activity and account quota alongside Cursor
+model-call costs and monthly allowance. It provides a quick desktop summary,
+with call-level detail available from the menu-bar popover.
 
-The Widget focuses on the remaining Codex allowance and Cursor Monthly usage.
-The internal `CodexWeek` target names, bundle IDs, app path, LaunchAgent label,
-and snapshot path remain unchanged so existing installations upgrade in place.
+The installed app and Widget continue to use the public name `Cursor + Codex`.
+Internal `CodexWeek` target names, bundle IDs, the app path, LaunchAgent label,
+and snapshot path also remain unchanged so existing installations upgrade in
+place.
 
 ## Interface
 
-The menu bar shows a compact summary such as `400K · $0.03`. Its popover adds
-Codex input, cached input, output and reasoning totals; Cursor's daily actual
-charge; and the latest 20 model calls with time, model, optional token count and
-charge.
-
-![Menu-bar popover using example data](screenshots/menu-popover.png)
+The menu bar shows a compact token-and-cost summary. Its popover adds Codex
+input, cached input, output and reasoning totals; Cursor's daily actual charge;
+and the latest 20 model calls with time, model, optional token count and charge.
 
 The Widget has no overall title and always presents Codex and Cursor as two
 equal quota panels:
@@ -29,14 +31,44 @@ equal quota panels:
 | Large | Two full-width panels stacked vertically |
 | Extra Large | Two full-width panels stacked vertically with more breathing room |
 
-<p align="center">
-  <img src="screenshots/widget-small.png" alt="Small Widget" width="174">
-  <img src="screenshots/widget-medium.png" alt="Medium Widget" width="352">
-</p>
-<p align="center">
-  <img src="screenshots/widget-large.png" alt="Large Widget" width="352">
-  <img src="screenshots/widget-extra-large.png" alt="Extra Large Widget" width="710">
-</p>
+<table>
+  <tr>
+    <th colspan="2">Menu-bar popover</th>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="screenshots/menu-popover.png" alt="AI Token Quota Widget menu-bar popover with Demo data" width="390">
+    </td>
+  </tr>
+  <tr>
+    <th>Small Widget</th>
+    <th>Medium Widget</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/widget-small.png" alt="AI Token Quota Widget Small layout with Demo data" width="174">
+    </td>
+    <td align="center">
+      <img src="screenshots/widget-medium.png" alt="AI Token Quota Widget Medium layout with Demo data" width="352">
+    </td>
+  </tr>
+  <tr>
+    <th>Large Widget</th>
+    <th>Extra Large Widget</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/widget-large.png" alt="AI Token Quota Widget Large layout with Demo data" width="352">
+    </td>
+    <td align="center">
+      <img src="screenshots/widget-extra-large.png" alt="AI Token Quota Widget Extra Large layout with Demo data" width="430">
+    </td>
+  </tr>
+</table>
+
+Every image above is generated from the bundled Preview snapshot and visibly
+marked as `Demo`. No screenshot contains live account values or personal Cursor
+usage.
 
 Every panel includes a service label, remaining value, reset countdown, status
 text and progress line. Codex is teal and Cursor is indigo; values below 50%
@@ -114,8 +146,9 @@ strong warning. Missing live data is never replaced with preview data.
 - The snapshot is atomically replaced at
   `~/Library/Application Support/CodexWeek/codex-week-snapshot.json`.
 - Its directory is mode `700` and the snapshot is mode `600`.
-- All repository screenshots use deterministic example data, never account
-  data from the developer's machine.
+- All repository screenshots use deterministic `Demo` data from
+  `UsageSnapshot.preview`; they never contain live account values or personal
+  Cursor usage.
 
 ## Requirements and installation
 
