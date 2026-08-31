@@ -1,0 +1,8 @@
+{
+  "totalTokens": 1000,
+  "inputTokens": 900,
+  "cachedInputTokens": 600,
+  "outputTokens": 100,
+  "reasoningTokens": 40,
+  "sessionCount": 2
+}

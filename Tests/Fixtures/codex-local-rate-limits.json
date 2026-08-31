@@ -1,0 +1,10 @@
+{
+  "primary": {
+    "used_percent": 41,
+    "window_minutes": 10080,
+    "resets_at": 1790812800
+  },
+  "secondary": null,
+  "credits": null,
+  "plan_type": "pro"
+}

@@ -1,0 +1,44 @@
+{
+  "totalUsageEventsCount": "3",
+  "usageEventsDisplay": [
+    {
+      "timestamp": "1788192000000",
+      "model": "claude-4.5-sonnet",
+      "kind": "Included",
+      "chargedCents": "3",
+      "tokenUsage": {
+        "inputTokens": "1000",
+        "outputTokens": 200,
+        "cacheWriteTokens": 30,
+        "cacheReadTokens": 400,
+        "totalCents": 9
+      }
+    },
+    {
+      "timestamp": 1788191000000,
+      "model": "gpt-5.6",
+      "kind": "On-demand",
+      "chargedCents": 12,
+      "tokenUsage": {
+        "inputTokens": 2200,
+        "outputTokens": 510,
+        "cacheWriteTokens": 0,
+        "cacheReadTokens": 700,
+        "totalCents": 31
+      }
+    },
+    {
+      "timestamp": "1788190000000",
+      "model": "auto",
+      "kind": "Included",
+      "chargedCents": 0,
+      "tokenUsage": {
+        "inputTokens": 400,
+        "outputTokens": 80,
+        "cacheWriteTokens": 0,
+        "cacheReadTokens": 0,
+        "totalCents": 2
+      }
+    }
+  ]
+}

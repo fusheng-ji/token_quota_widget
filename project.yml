@@ -1,0 +1,142 @@
+name: CodexWeek
+packages:
+  CodexBar:
+    url: https://github.com/steipete/CodexBar.git
+    revision: 5d7c1f29fd11ecbf697b3532340f75b25319f811
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ${CODEXWEEK_DEVELOPMENT_TEAM}
+targets:
+  CodexWeek:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Shared
+      - path: scripts/collect_codex_week.sh
+        buildPhase: resources
+      - path: LICENSE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+    dependencies:
+      - target: CodexWeekWidgetExtension
+        embed: true
+      - target: CodexWeekCollector
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek
+        PRODUCT_NAME: CodexWeek
+        CURRENT_PROJECT_VERSION: 16
+        MARKETING_VERSION: 4.0
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Cursor + Codex
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_LSUIElement: YES
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postCompileScripts:
+      - name: Embed usage collector
+        script: |
+          HELPER_DIR="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          RESOURCE_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "$HELPER_DIR"
+          ditto "${BUILT_PRODUCTS_DIR}/CodexWeekCollector" "$HELPER_DIR/CodexWeekCollector"
+          chmod 755 "$HELPER_DIR/CodexWeekCollector"
+          if [ "${CODE_SIGNING_ALLOWED}" = "YES" ]; then
+            HELPER_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"
+            codesign --force --sign "$HELPER_IDENTITY" --timestamp=none "$HELPER_DIR/CodexWeekCollector"
+          fi
+          for BUNDLE_NAME in CodexBar_CodexBarCore SweetCookieKit_SweetCookieKit swift-crypto_Crypto; do
+            if [ -d "${BUILT_PRODUCTS_DIR}/${BUNDLE_NAME}.bundle" ]; then
+              ditto "${BUILT_PRODUCTS_DIR}/${BUNDLE_NAME}.bundle" "${RESOURCE_DIR}/${BUNDLE_NAME}.bundle"
+            fi
+          done
+        basedOnDependencyAnalysis: false
+  CodexWeekCollector:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Collector
+      - path: Shared
+    dependencies:
+      - package: CodexBar
+        product: CodexBarCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.collector
+        PRODUCT_NAME: CodexWeekCollector
+        SWIFT_VERSION: "6.0"
+        CODE_SIGNING_ALLOWED: NO
+  CodexWeekWidgetExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Widget
+      - path: Shared
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Cursor + Codex
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.widget
+        PRODUCT_NAME: CodexWeekWidgetExtension
+        CURRENT_PROJECT_VERSION: 16
+        MARKETING_VERSION: 4.0
+        SKIP_INSTALL: YES
+        ENABLE_APP_SANDBOX: YES
+        CODE_SIGN_ENTITLEMENTS: Widget/CodexWeekWidget.entitlements
+  CodexWeekTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/Swift
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+  CodexWeekPreviewRenderer:
+    type: tool
+    platform: macOS
+    sources:
+      - path: PreviewRenderer
+      - path: Shared
+      - path: App/UsageStore.swift
+      - path: App/UsageMenuView.swift
+      - path: App/UsageMenuComponents.swift
+      - path: Widget/QuotaProviderPanel.swift
+      - path: Widget/QuotaWidgetContent.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.preview-renderer
+        PRODUCT_NAME: CodexWeekPreviewRenderer
+        SWIFT_VERSION: "6.0"
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  CodexWeek:
+    build:
+      targets:
+        CodexWeek: all
+        CodexWeekWidgetExtension: all
+        CodexWeekCollector: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - CodexWeekTests

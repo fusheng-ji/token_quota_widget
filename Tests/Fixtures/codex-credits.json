@@ -1,0 +1,12 @@
+{
+  "plan_type": "credits",
+  "rate_limit": {
+    "primary_window": null,
+    "secondary_window": null
+  },
+  "credits": {
+    "has_credits": true,
+    "unlimited": false,
+    "balance": "12.50"
+  }
+}

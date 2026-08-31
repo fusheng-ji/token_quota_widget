@@ -1,0 +1,16 @@
+.DS_Store
+CodexWeek.xcodeproj/
+.build/
+build-*/
+DerivedData/
+.swiftpm/
+*.xcresult
+*.xccovarchive
+*.xccovreport
+xcuserdata/
+*.xcuserstate
+Config.xcconfig
+preview/
+*.logarchive
+*.log
+*.tmp
