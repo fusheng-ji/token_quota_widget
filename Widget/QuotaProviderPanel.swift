@@ -34,12 +34,14 @@ enum QuotaProviderKind {
 }
 
 enum QuotaPanelDensity {
+    case strip
     case compact
     case regular
     case expanded
 
     var padding: CGFloat {
         switch self {
+        case .strip: 6
         case .compact: 8
         case .regular: 12
         case .expanded: 16
@@ -48,6 +50,7 @@ enum QuotaPanelDensity {
 
     var spacing: CGFloat {
         switch self {
+        case .strip: 2
         case .compact: 3
         case .regular: 6
         case .expanded: 8
@@ -56,6 +59,7 @@ enum QuotaPanelDensity {
 
     var valueSize: CGFloat {
         switch self {
+        case .strip: 17
         case .compact: 20
         case .regular: 30
         case .expanded: 42
@@ -69,7 +73,7 @@ struct QuotaProviderPanel: View {
     let density: QuotaPanelDensity
 
     private var quota: CompactQuota? { data.value }
-    private var cornerRadius: CGFloat { density == .compact ? 13 : 18 }
+    private var cornerRadius: CGFloat { density == .strip || density == .compact ? 13 : 18 }
     private var remainingPercent: Double? {
         UsageFormatting.clampedPercent(quota?.remainingPercent)
     }
@@ -123,20 +127,12 @@ struct QuotaProviderPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.spacing) {
-            header
-            value
-
-            if density != .compact {
-                Text(detailText)
-                    .font(.system(size: density == .expanded ? 12 : 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .lineLimit(1)
+        Group {
+            if density == .strip {
+                stripBody
+            } else {
+                standardBody
             }
-
-            resetLine
-            QuotaProgressBar(percent: remainingPercent, tint: progressColor)
-                .frame(height: density == .expanded ? 6 : 4)
         }
         .padding(density.padding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -153,6 +149,56 @@ struct QuotaProviderPanel: View {
             "\(provider.name), \(valueText) remaining, \(detailText), " +
                 "\(UsageFormatting.resetCountdown(quota?.resetAt)), \(statusText)"
         )
+    }
+
+    private var stripBody: some View {
+        VStack(alignment: .leading, spacing: density.spacing) {
+            HStack(spacing: 5) {
+                Image(systemName: provider.icon)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(provider.accent)
+                Text(provider.name)
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(.white.opacity(0.86))
+                Spacer(minLength: 3)
+                Text(valueText)
+                    .font(.system(size: density.valueSize, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+            }
+            HStack(spacing: 4) {
+                Image(systemName: statusIcon)
+                Text(data.status == .ready ? detailText : statusText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                Spacer(minLength: 2)
+                QuotaProgressBar(percent: remainingPercent, tint: progressColor)
+                    .frame(width: 42, height: 3)
+            }
+            .font(.system(size: 7, weight: .semibold, design: .rounded))
+            .foregroundStyle(data.status == .ready ? .white.opacity(0.62) : progressColor)
+        }
+    }
+
+    private var standardBody: some View {
+        VStack(alignment: .leading, spacing: density.spacing) {
+            header
+            value
+
+            if density != .compact {
+                Text(detailText)
+                    .font(.system(size: density == .expanded ? 12 : 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+            }
+
+            resetLine
+            QuotaProgressBar(percent: remainingPercent, tint: progressColor)
+                .frame(height: density == .expanded ? 6 : 4)
+        }
     }
 
     private var header: some View {
@@ -181,9 +227,11 @@ struct QuotaProviderPanel: View {
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text("remaining")
-                .font(.system(size: density == .expanded ? 13 : 9, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.52))
+            if density != .regular {
+                Text("remaining")
+                    .font(.system(size: density == .expanded ? 13 : 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.52))
+            }
             Spacer(minLength: 0)
         }
     }
@@ -194,12 +242,6 @@ struct QuotaProviderPanel: View {
                 .foregroundStyle(provider.accent.opacity(0.88))
             Text(UsageFormatting.resetCountdown(quota?.resetAt))
                 .lineLimit(1)
-            if density == .compact {
-                Spacer(minLength: 3)
-                Text(detailText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-            }
         }
         .font(.system(size: density == .expanded ? 11 : 8, weight: .semibold, design: .rounded))
         .foregroundStyle(.white.opacity(0.70))

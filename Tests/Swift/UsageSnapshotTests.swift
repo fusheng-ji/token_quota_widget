@@ -2,15 +2,34 @@ import Foundation
 import XCTest
 
 final class UsageSnapshotTests: XCTestCase {
-    func testVersionThreeSnapshotRoundTrips() throws {
+    func testVersionFourSnapshotRoundTrips() throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoded = try XCTUnwrap(UsageSnapshot.decode(encoder.encode(UsageSnapshot.preview)))
 
-        XCTAssertEqual(decoded.schemaVersion, 3)
+        XCTAssertEqual(decoded.schemaVersion, 4)
         XCTAssertEqual(decoded.codexTokens.value?.totalTokens, 100_000)
         XCTAssertEqual(decoded.cursorCosts.value?.recentEvents.count, 3)
         XCTAssertNil(decoded.cursorQuota.value?.used)
+        XCTAssertEqual(decoded.deepseekUsage.value?.monthTokens, 2_400_000)
+    }
+
+    func testV3SnapshotMigratesWithDeepSeekDisconnected() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let preview = UsageSnapshot.preview
+        let object: [String: Any] = [
+            "schemaVersion": 3,
+            "generatedAt": ISO8601DateFormatter().string(from: preview.generatedAt),
+            "codexTokens": try jsonObject(preview.codexTokens, encoder: encoder),
+            "cursorCosts": try jsonObject(preview.cursorCosts, encoder: encoder),
+            "cursorQuota": try jsonObject(preview.cursorQuota, encoder: encoder),
+            "codexQuota": try jsonObject(preview.codexQuota, encoder: encoder)
+        ]
+        let decoded = try XCTUnwrap(UsageSnapshot.decode(JSONSerialization.data(withJSONObject: object)))
+        XCTAssertEqual(decoded.schemaVersion, 4)
+        XCTAssertEqual(decoded.deepseekUsage.status, .unavailable)
+        XCTAssertEqual(decoded.codexTokens.value?.totalTokens, 100_000)
     }
 
     func testV2QuotaSnapshotMigratesWithoutInventingUsage() throws {
@@ -93,5 +112,63 @@ final class UsageSnapshotTests: XCTestCase {
     func testStaleAgeFormatting() {
         let now = Date(timeIntervalSince1970: 20_000)
         XCTAssertEqual(UsageFormatting.cacheAge(now.addingTimeInterval(-4 * 3_600), relativeTo: now), "Stale · 4h old")
+    }
+
+    func testDeepSeekBrowserTokenParsing() throws {
+        XCTAssertEqual(
+            DeepSeekCredentialStore.token(fromLocalStorageValue: #"{"value":"demo.jwt.token"}"#),
+            "demo.jwt.token"
+        )
+        XCTAssertEqual(
+            DeepSeekCredentialStore.token(fromLocalStorageValue: #""plain.jwt.token""#),
+            "plain.jwt.token"
+        )
+        XCTAssertNil(DeepSeekCredentialStore.token(fromLocalStorageValue: "  \n  "))
+        XCTAssertNil(DeepSeekCredentialStore.token(fromLocalStorageValue: "token\u{0000}value"))
+    }
+
+    func testDeepSeekPrimaryBalanceUsesFirstValidCurrency() throws {
+        let selected = try XCTUnwrap(
+            UsageFormatting.firstValidMoney([
+                DeepSeekMoney(currency: "   ", amount: 99),
+                DeepSeekMoney(currency: "EUR", amount: 12.5),
+                DeepSeekMoney(currency: "USD", amount: 8)
+            ])
+        )
+        XCTAssertEqual(selected.currency, "EUR")
+        XCTAssertEqual(selected.amount, 12.5)
+    }
+
+    func testDeepSeekEmptyBalanceDoesNotInventQuota() {
+        XCTAssertNil(UsageFormatting.firstValidMoney([]))
+        XCTAssertEqual(UsageFormatting.money(nil), "—")
+        XCTAssertNil(UsageSnapshot.unavailable.deepseekUsage.value)
+        XCTAssertEqual(UsageSnapshot.unavailable.deepseekUsage.status, .unavailable)
+    }
+
+    func testDeepSeekStaleValueRetainsBalance() {
+        let value = UsageValue(
+            status: UsageDataStatus.stale,
+            source: UsageDataSource.cache,
+            measuredAt: Date(timeIntervalSince1970: 1_000),
+            lastAttemptAt: Date(timeIntervalSince1970: 2_000),
+            message: "offline",
+            value: DeepSeekUsageTotals(
+                monthTokens: 10,
+                monthRequests: 1,
+                monthCosts: [DeepSeekMoney(currency: "USD", amount: 0.5)],
+                balances: [DeepSeekMoney(currency: "USD", amount: 9.5)],
+                grantedBalances: [],
+                totalCosts: [],
+                models: []
+            )
+        )
+        XCTAssertEqual(value.status, .stale)
+        XCTAssertEqual(value.value?.balances.first?.amount, 9.5)
+        XCTAssertEqual(UsageFormatting.cacheAge(value.measuredAt, relativeTo: Date(timeIntervalSince1970: 15_400)), "Stale · 4h old")
+    }
+
+    private func jsonObject<T: Encodable>(_ value: T, encoder: JSONEncoder) throws -> Any {
+        try JSONSerialization.jsonObject(with: encoder.encode(value))
     }
 }

@@ -32,6 +32,25 @@ enum UsageFormatting {
         return "US$" + (formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value))
     }
 
+    static func money(_ value: DeepSeekMoney?) -> String {
+        guard let value else { return "—" }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = value.currency
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 4
+        return formatter.string(from: NSNumber(value: value.amount))
+            ?? "\(value.currency) \(String(format: "%.2f", value.amount))"
+    }
+
+    static func moneyList(_ values: [DeepSeekMoney]) -> String {
+        values.isEmpty ? "—" : values.map(money).joined(separator: " · ")
+    }
+
+    static func firstValidMoney(_ values: [DeepSeekMoney]) -> DeepSeekMoney? {
+        values.first { !$0.currency.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.amount.isFinite }
+    }
+
     static func clampedPercent(_ value: Double?) -> Double? {
         value.map { min(max($0, 0), 100) }
     }
@@ -81,6 +100,7 @@ enum UsageFormatting {
         case .codexBarLocal: "CodexBar local"
         case .cursorDashboard: "Cursor Dashboard"
         case .accountAPI: "Account API"
+        case .deepSeekPlatform: "DeepSeek Platform"
         case .cache: "Cached"
         case .preview: "Preview"
         case .none: "No data"

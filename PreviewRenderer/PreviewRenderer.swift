@@ -20,10 +20,11 @@ struct PreviewRenderer {
             store: UsageStore(snapshot: .preview),
             automaticRefresh: false,
             scrollsContent: false,
-            updatedDescriptionOverride: "from demo data"
+            updatedDescriptionOverride: "from demo data",
+            viewHeight: 920
         )
         .background(Color(nsColor: .windowBackgroundColor))
-        render(menu, size: CGSize(width: 390, height: 610), to: outputDirectory.appendingPathComponent("menu-popover.png"))
+        render(menu, size: CGSize(width: 410, height: 920), to: outputDirectory.appendingPathComponent("menu-popover.png"))
 
         renderWidget(.systemSmall, size: CGSize(width: 174, height: 174), outputDirectory: outputDirectory)
         renderWidget(.systemMedium, size: CGSize(width: 352, height: 174), outputDirectory: outputDirectory)

@@ -6,6 +6,7 @@ struct UsageMenuView: View {
     var automaticRefresh = true
     var scrollsContent = true
     var updatedDescriptionOverride: String?
+    var viewHeight: CGFloat = 700
     private let timer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -18,7 +19,7 @@ struct UsageMenuView: View {
             Divider()
             actions
         }
-        .frame(width: 390, height: 610)
+        .frame(width: 410, height: viewHeight)
         .onAppear {
             if automaticRefresh { store.refreshIfNeeded() }
         }
@@ -41,6 +42,8 @@ struct UsageMenuView: View {
             codexSection
             Divider()
             cursorSection
+            Divider()
+            deepseekSection
         }
         .padding(16)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -49,7 +52,7 @@ struct UsageMenuView: View {
     private var header: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Cursor + Codex")
+                Text("AI Token Quota")
                     .font(.headline)
                 Text(
                     store.isRefreshing
@@ -146,6 +149,114 @@ struct UsageMenuView: View {
         }
     }
 
+    private var deepseekSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("DeepSeek this month", systemImage: "waveform.path.ecg.rectangle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Spacer()
+                StatusPill(value: store.snapshot.deepseekUsage)
+            }
+
+            if let usage = store.snapshot.deepseekUsage.value {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(UsageFormatting.money(UsageFormatting.firstValidMoney(usage.balances)))
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Text("balance")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 12) {
+                    DeepSeekMetric(label: "Month cost", value: UsageFormatting.moneyList(usage.monthCosts))
+                    DeepSeekMetric(label: "Tokens", value: UsageFormatting.tokens(usage.monthTokens))
+                    DeepSeekMetric(label: "Requests", value: usage.monthRequests?.formatted() ?? "—")
+                }
+
+                let additionalBalances = Array(usage.balances.dropFirst())
+                if !additionalBalances.isEmpty {
+                    DeepSeekDetailLine(
+                        label: "Other balances",
+                        value: UsageFormatting.moneyList(additionalBalances)
+                    )
+                }
+                if !usage.grantedBalances.isEmpty {
+                    DeepSeekDetailLine(
+                        label: "Granted balance",
+                        value: UsageFormatting.moneyList(usage.grantedBalances)
+                    )
+                }
+                if !usage.totalCosts.isEmpty {
+                    DeepSeekDetailLine(
+                        label: "Total cost",
+                        value: UsageFormatting.moneyList(usage.totalCosts)
+                    )
+                }
+
+                if !usage.models.isEmpty {
+                    Text("Models")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(usage.models.prefix(8))) { model in
+                            DeepSeekModelRow(model: model)
+                            if model.id != usage.models.prefix(8).last?.id { Divider() }
+                        }
+                    }
+                }
+            } else {
+                EmptyState(message: store.snapshot.deepseekUsage.message ?? "No DeepSeek usage yet.")
+            }
+
+            HStack {
+                SectionMessage(
+                    message: store.snapshot.deepseekUsage.message,
+                    status: store.snapshot.deepseekUsage.status
+                )
+                Spacer()
+                if store.deepSeekConnectionState == .loadingUsage {
+                    Button("Loading…") {}
+                        .controlSize(.small)
+                        .disabled(true)
+                } else if store.isConnectingDeepSeek {
+                    Button("Check now") { store.checkDeepSeekBrowserSession() }
+                        .controlSize(.small)
+                } else if store.snapshot.deepseekUsage.status == .unauthenticated
+                    || store.snapshot.deepseekUsage.value == nil {
+                    Button("Connect in browser…") { store.connectDeepSeekInBrowser() }
+                        .controlSize(.small)
+                } else {
+                    Button("Reconnect in browser…") { store.connectDeepSeekInBrowser() }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+            }
+
+            if let message = store.deepSeekConnectionMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if store.isConnectingDeepSeek {
+                        ProgressView().controlSize(.mini)
+                    } else if case .failed = store.deepSeekConnectionState {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Text(message)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var quotaFooter: some View {
         HStack(spacing: 12) {
             QuotaLabel(systemImage: "cursorarrow", tint: .indigo, value: store.snapshot.cursorQuota)
@@ -158,7 +269,7 @@ struct UsageMenuView: View {
 
     private var actions: some View {
         HStack {
-            Label("Local data · credentials are not saved", systemImage: "lock.fill")
+            Label("Credentials stay local · snapshots contain no tokens", systemImage: "lock.fill")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()

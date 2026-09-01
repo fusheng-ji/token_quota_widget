@@ -26,8 +26,8 @@ if [[ ! -x "$developer_dir/usr/bin/xcodebuild" ]]; then
   exit 1
 fi
 
-print "Cursor + Codex Widget setup"
-print "No Admin API key is required. Existing local sign-in sessions are used only for official usage endpoints."
+print "AI Token Quota setup"
+print "No Admin API key is required. Cursor and Codex reuse local sessions; DeepSeek can be connected once from the menu."
 print
 
 read "team_id?Apple Developer Team ID (leave blank for local-only signing): "
@@ -121,8 +121,12 @@ rm -f "$agent_path"
 /usr/libexec/PlistBuddy -c "Add :StandardOutPath string $log_dir/refresh.out.log" "$agent_path"
 /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $log_dir/refresh.err.log" "$agent_path"
 
+installed_widget="$installed_app/Contents/PlugIns/CodexWeekWidgetExtension.appex"
+# Xcode registers Debug/Release build products with WidgetKit. Clear every
+# registration for this bundle ID before adding the installed copy back once.
+pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
 "$lsregister" -f -R -trusted "$installed_app"
-pluginkit -a "$installed_app/Contents/PlugIns/CodexWeekWidgetExtension.appex"
+pluginkit -a "$installed_widget"
 launchctl bootstrap "gui/$(id -u)" "$agent_path"
 launchctl kickstart -k "gui/$(id -u)/$agent_label"
 
@@ -132,4 +136,4 @@ open "$installed_app"
 print
 print "Installed: $installed_app"
 print "Refresh interval: $refresh_minutes minutes"
-print "Next: right-click the desktop → Edit Widgets → search for Cursor + Codex."
+print "Next: right-click the desktop → Edit Widgets → search for AI Token Quota."

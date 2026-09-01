@@ -28,5 +28,5 @@ for collector in \
   fi
 done
 
-print -u2 "CodexWeekCollector is missing. Reinstall Cursor + Codex."
+print -u2 "CodexWeekCollector is missing. Reinstall AI Token Quota."
 exit 1

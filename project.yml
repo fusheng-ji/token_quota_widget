@@ -3,6 +3,9 @@ packages:
   CodexBar:
     url: https://github.com/steipete/CodexBar.git
     revision: 5d7c1f29fd11ecbf697b3532340f75b25319f811
+  SweetCookieKit:
+    url: https://github.com/steipete/SweetCookieKit.git
+    revision: d5ea6d92298779ec0c3ddf7d3d99da186a305e14
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
@@ -35,10 +38,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek
         PRODUCT_NAME: CodexWeek
-        CURRENT_PROJECT_VERSION: 16
-        MARKETING_VERSION: 4.0
+        CURRENT_PROJECT_VERSION: 21
+        MARKETING_VERSION: 4.3
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Cursor + Codex
+        INFOPLIST_KEY_CFBundleDisplayName: AI Token Quota
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: AI Token Quota reads only the DeepSeek session from the official Safari tab you opened.
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_LSUIElement: YES
         ENABLE_APP_SANDBOX: NO
@@ -70,6 +74,8 @@ targets:
     dependencies:
       - package: CodexBar
         product: CodexBarCore
+      - package: SweetCookieKit
+        product: SweetCookieKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.collector
@@ -85,7 +91,7 @@ targets:
     info:
       path: Widget/Info.plist
       properties:
-        CFBundleDisplayName: Cursor + Codex
+        CFBundleDisplayName: AI Token Quota
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -94,8 +100,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.widget
         PRODUCT_NAME: CodexWeekWidgetExtension
-        CURRENT_PROJECT_VERSION: 16
-        MARKETING_VERSION: 4.0
+        CURRENT_PROJECT_VERSION: 21
+        MARKETING_VERSION: 4.3
         SKIP_INSTALL: YES
         ENABLE_APP_SANDBOX: YES
         CODE_SIGN_ENTITLEMENTS: Widget/CodexWeekWidget.entitlements
@@ -119,7 +125,9 @@ targets:
       - path: App/UsageStore.swift
       - path: App/UsageMenuView.swift
       - path: App/UsageMenuComponents.swift
+      - path: App/DeepSeekSafariSessionReader.swift
       - path: Widget/QuotaProviderPanel.swift
+      - path: Widget/DeepSeekUsagePanel.swift
       - path: Widget/QuotaWidgetContent.swift
     settings:
       base:
@@ -140,3 +148,9 @@ schemes:
       config: Debug
       targets:
         - CodexWeekTests
+  CodexWeekPreviewRenderer:
+    build:
+      targets:
+        CodexWeekPreviewRenderer: all
+    run:
+      config: Debug

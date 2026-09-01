@@ -30,6 +30,12 @@ enum CollectorSupport {
     static func status(for error: Error) -> UsageDataStatus {
         if case CursorDashboardError.notLoggedIn = error { return .unauthenticated }
         if case CursorDashboardError.notInstalled = error { return .unauthenticated }
+        if let deepSeekError = error as? DeepSeekPlatformError {
+            switch deepSeekError {
+            case .notConnected, .sessionExpired: return .unauthenticated
+            case .network, .invalidResponse: break
+            }
+        }
         return .error
     }
 

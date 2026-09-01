@@ -12,6 +12,7 @@ enum UsageDataSource: String, Codable, Hashable, Sendable {
     case codexBarLocal
     case cursorDashboard
     case accountAPI
+    case deepSeekPlatform
     case cache
     case preview
     case none
@@ -77,4 +78,28 @@ struct CompactQuota: Codable, Hashable, Sendable {
     let resetAt: Date?
     let windowSeconds: Int?
     let detail: String
+}
+
+struct DeepSeekMoney: Codable, Hashable, Identifiable, Sendable {
+    var id: String { currency }
+    let currency: String
+    let amount: Double
+}
+
+struct DeepSeekModelUsage: Codable, Hashable, Identifiable, Sendable {
+    var id: String { model }
+    let model: String
+    let tokens: Int
+    let requests: Int
+    let costs: [DeepSeekMoney]
+}
+
+struct DeepSeekUsageTotals: Codable, Hashable, Sendable {
+    let monthTokens: Int?
+    let monthRequests: Int?
+    let monthCosts: [DeepSeekMoney]
+    let balances: [DeepSeekMoney]
+    let grantedBalances: [DeepSeekMoney]
+    let totalCosts: [DeepSeekMoney]
+    let models: [DeepSeekModelUsage]
 }

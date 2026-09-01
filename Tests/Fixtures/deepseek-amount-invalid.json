@@ -1,0 +1,22 @@
+{
+  "code": 0,
+  "data": {
+    "biz_data": {
+      "series": [
+        {
+          "model": "deepseek-v4-flash",
+          "buckets": [
+            {
+              "usage": {
+                "PROMPT_CACHE_HIT_TOKEN": "not-a-number",
+                "PROMPT_CACHE_MISS_TOKEN": 100,
+                "RESPONSE_TOKEN": 50,
+                "REQUEST": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

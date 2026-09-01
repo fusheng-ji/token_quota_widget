@@ -24,10 +24,35 @@ extension UsageSnapshot {
            snapshot.schemaVersion == Self.currentSchemaVersion {
             return snapshot
         }
+        if let previous = try? decoder.decode(PreviousUsageSnapshot.self, from: data),
+           previous.schemaVersion == 3 {
+            return previous.migrated
+        }
         if let legacy = try? decoder.decode(LegacyQuotaSnapshot.self, from: data) {
             return legacy.migrated
         }
         return nil
+    }
+}
+
+private struct PreviousUsageSnapshot: Codable {
+    let schemaVersion: Int
+    let generatedAt: Date
+    let codexTokens: UsageValue<CodexTokenTotals>
+    let cursorCosts: UsageValue<CursorCostTotals>
+    let cursorQuota: UsageValue<CompactQuota>
+    let codexQuota: UsageValue<CompactQuota>
+
+    var migrated: UsageSnapshot {
+        UsageSnapshot(
+            schemaVersion: UsageSnapshot.currentSchemaVersion,
+            generatedAt: generatedAt,
+            codexTokens: codexTokens,
+            cursorCosts: cursorCosts,
+            cursorQuota: cursorQuota,
+            codexQuota: codexQuota,
+            deepseekUsage: .unavailable("Connect DeepSeek in your browser to load account usage and balance.")
+        )
     }
 }
 
@@ -75,7 +100,8 @@ private struct LegacyQuotaSnapshot: Codable {
             codexQuota: migrateQuota(
                 providers.first { $0.id == .codex },
                 defaultLabel: "Codex quota"
-            )
+            ),
+            deepseekUsage: .unavailable("Connect DeepSeek in your browser to load account usage and balance.")
         )
     }
 

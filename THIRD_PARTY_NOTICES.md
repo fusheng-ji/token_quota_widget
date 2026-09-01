@@ -1,11 +1,15 @@
 # Third-party notices
 
-## CodexBar
+## CodexBar and SweetCookieKit
 
 This project links `CodexBarCore` and adapts portions of Cursor authentication,
 usage-event decoding, pagination, and boundary reconciliation from
 [CodexBar](https://github.com/steipete/CodexBar/) commit
 `5d7c1f29fd11ecbf697b3532340f75b25319f811`.
+
+DeepSeek browser-session import uses `ChromiumLocalStorageReader` from
+[SweetCookieKit](https://github.com/steipete/SweetCookieKit) commit
+`d5ea6d92298779ec0c3ddf7d3d99da186a305e14`.
 
 MIT License
 

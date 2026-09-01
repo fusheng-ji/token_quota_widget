@@ -1,0 +1,43 @@
+{
+  "code": 0,
+  "data": {
+    "biz_data": {
+      "start": 1788213600,
+      "end": 1790805600,
+      "bucket": "DAY",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+      "series": [
+        {
+          "api_key": { "tracking_id": "fixture" },
+          "model": "deepseek-v4-flash",
+          "buckets": [
+            {
+              "time": 1788213600,
+              "usage": {
+                "PROMPT_CACHE_HIT_TOKEN": "600000",
+                "PROMPT_CACHE_MISS_TOKEN": 200000,
+                "RESPONSE_TOKEN": 100000,
+                "REQUEST": 12
+              }
+            }
+          ]
+        },
+        {
+          "api_key": { "tracking_id": "fixture" },
+          "model": "deepseek-v4-pro",
+          "buckets": [
+            {
+              "time": 1788213600,
+              "usage": {
+                "PROMPT_CACHE_HIT_TOKEN": 100000,
+                "PROMPT_CACHE_MISS_TOKEN": 250000,
+                "RESPONSE_TOKEN": 150000,
+                "REQUEST": "4"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

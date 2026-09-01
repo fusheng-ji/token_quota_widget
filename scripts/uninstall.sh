@@ -17,4 +17,4 @@ for target in "$installed_app" "$agent_path" "$config_dir"; do
 done
 
 killall chronod >/dev/null 2>&1 || true
-print "Cursor + Codex was moved to Trash and can be recovered there."
+print "AI Token Quota was moved to Trash and can be recovered there."

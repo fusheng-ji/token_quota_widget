@@ -9,6 +9,7 @@ struct CodexWeekApp: App {
             UsageMenuView(store: store)
         } label: {
             Label(store.menuBarText, systemImage: "bolt.horizontal.circle.fill")
+                .accessibilityLabel(store.menuBarAccessibilityText)
         }
         .menuBarExtraStyle(.window)
     }

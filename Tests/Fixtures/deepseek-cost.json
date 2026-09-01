@@ -1,0 +1,28 @@
+{
+  "code": 0,
+  "data": {
+    "biz_data": {
+      "start": 1788213600,
+      "end": 1790805600,
+      "bucket": "DAY",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"],
+      "data": [
+        {
+          "currency": "USD",
+          "series": [
+            {
+              "api_key": { "tracking_id": "fixture" },
+              "model": "deepseek-v4-flash",
+              "buckets": [{ "time": 1788213600, "cost": "0.72" }]
+            },
+            {
+              "api_key": { "tracking_id": "fixture" },
+              "model": "deepseek-v4-pro",
+              "buckets": [{ "time": 1788213600, "cost": 0.52 }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

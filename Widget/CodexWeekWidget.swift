@@ -29,8 +29,8 @@ struct CodexWeekWidget: Widget {
         StaticConfiguration(kind: kind, provider: CodexWeekProvider()) { entry in
             CodexWeekWidgetView(entry: entry)
         }
-        .configurationDisplayName("Cursor + Codex")
-        .description("Cursor and Codex quota remaining at a glance.")
+        .configurationDisplayName("AI Token Quota")
+        .description("Codex, Cursor and DeepSeek usage at a glance.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
         .contentMarginsDisabled()
     }

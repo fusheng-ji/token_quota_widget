@@ -14,19 +14,34 @@ struct QuotaWidgetContent: View {
     private var layout: some View {
         switch family {
         case .systemSmall:
-            VStack(spacing: 8) {
-                panel(.codex, density: .compact)
-                panel(.cursor, density: .compact)
+            VStack(spacing: 5) {
+                panel(.codex, density: .strip)
+                panel(.cursor, density: .strip)
+                deepSeekPanel(density: .strip)
             }
         case .systemMedium:
-            HStack(spacing: 10) {
-                panel(.codex, density: .regular)
-                panel(.cursor, density: .regular)
+            VStack(spacing: 7) {
+                HStack(spacing: 7) {
+                    panel(.codex, density: .compact)
+                    panel(.cursor, density: .compact)
+                }
+                deepSeekPanel(density: .regular)
+            }
+        case .systemLarge:
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    panel(.codex, density: .regular)
+                    panel(.cursor, density: .regular)
+                }
+                deepSeekPanel(density: .expanded)
             }
         default:
             VStack(spacing: 12) {
-                panel(.codex, density: .expanded)
-                panel(.cursor, density: .expanded)
+                HStack(spacing: 12) {
+                    panel(.codex, density: .expanded)
+                    panel(.cursor, density: .expanded)
+                }
+                deepSeekPanel(density: .expanded, showsModels: true)
             }
         }
     }
@@ -44,6 +59,17 @@ struct QuotaWidgetContent: View {
             provider: provider,
             data: provider == .codex ? snapshot.codexQuota : snapshot.cursorQuota,
             density: density
+        )
+    }
+
+    private func deepSeekPanel(
+        density: DeepSeekPanelDensity,
+        showsModels: Bool = false
+    ) -> some View {
+        DeepSeekUsagePanel(
+            data: snapshot.deepseekUsage,
+            density: density,
+            showsModels: showsModels
         )
     }
 }

@@ -90,6 +90,35 @@ extension UsageSnapshot {
                     windowSeconds: 604_800,
                     detail: "Demo data · 60% left"
                 )
+            ),
+            deepseekUsage: UsageValue(
+                status: .ready,
+                source: .preview,
+                measuredAt: now,
+                lastAttemptAt: now,
+                message: nil,
+                value: DeepSeekUsageTotals(
+                    monthTokens: 2_400_000,
+                    monthRequests: 128,
+                    monthCosts: [DeepSeekMoney(currency: "USD", amount: 1.24)],
+                    balances: [DeepSeekMoney(currency: "USD", amount: 18.76)],
+                    grantedBalances: [DeepSeekMoney(currency: "USD", amount: 3.00)],
+                    totalCosts: [DeepSeekMoney(currency: "USD", amount: 7.80)],
+                    models: [
+                        DeepSeekModelUsage(
+                            model: "deepseek-v4-flash",
+                            tokens: 1_800_000,
+                            requests: 96,
+                            costs: [DeepSeekMoney(currency: "USD", amount: 0.72)]
+                        ),
+                        DeepSeekModelUsage(
+                            model: "deepseek-v4-pro",
+                            tokens: 600_000,
+                            requests: 32,
+                            costs: [DeepSeekMoney(currency: "USD", amount: 0.52)]
+                        )
+                    ]
+                )
             )
         )
     }()

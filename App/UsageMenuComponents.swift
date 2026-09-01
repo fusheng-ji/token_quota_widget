@@ -39,6 +39,67 @@ struct CursorEventRow: View {
     }
 }
 
+struct DeepSeekMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
+struct DeepSeekDetailLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .font(.caption)
+    }
+}
+
+struct DeepSeekModelRow: View {
+    let model: DeepSeekModelUsage
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.model).font(.callout).lineLimit(1)
+                Text("\(UsageFormatting.tokens(model.tokens)) tokens · \(model.requests) requests")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(UsageFormatting.moneyList(model.costs))
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+        }
+        .padding(.vertical, 6)
+    }
+}
+
 struct StatusPill<Value: Codable & Hashable & Sendable>: View {
     let value: UsageValue<Value>
 
