@@ -100,12 +100,12 @@ installed_new_app=0
 install_committed=0
 
 cleanup() {
-  local status=$?
+  local exit_code=$?
   if [[ -d "$built_app" ]]; then
     "$lsregister" -u "$built_app" >/dev/null 2>&1 || true
     pluginkit -r "$built_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
   fi
-  if (( status != 0 && install_committed == 0 )); then
+  if (( exit_code != 0 && install_committed == 0 )); then
     print -u2 "BeaverMeter installation failed; restoring the previous installation."
     launchctl bootout "gui/$(id -u)/$agent_label" >/dev/null 2>&1 || true
     if (( installed_new_app == 1 )); then
@@ -123,7 +123,7 @@ cleanup() {
   fi
   [[ -d "$derived_data" ]] && rm -rf "$derived_data"
   [[ -d "$rollback_dir" ]] && rm -rf "$rollback_dir"
-  return "$status"
+  return "$exit_code"
 }
 trap cleanup EXIT
 

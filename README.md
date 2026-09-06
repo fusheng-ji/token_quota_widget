@@ -1,38 +1,40 @@
-# AI Token Quota Widget
+<p align="center">
+  <img src="Design/Logo/beaver-logo-head-only.png" alt="BeaverMeter beaver logo" width="180">
+</p>
 
-[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![Swift 5.0 / 6.0](https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&logo=swift&logoColor=white)](https://www.swift.org/)
-[![Version 4.4.0](https://img.shields.io/badge/version-4.4.0-4C7CF3?style=flat-square)](https://github.com/fusheng-ji/token_quota_widget)
-[![MIT License](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
+<h1 align="center">BeaverMeter</h1>
 
-AI Token Quota Widget is a native macOS menu-bar utility and WidgetKit
-extension that keeps Codex token activity and account quota alongside Cursor
-model-call costs and monthly allowance. The menu-bar popover also reads the
-current month's DeepSeek API tokens, requests, cost and account balance,
-so routine usage checks do not require opening the Dashboard.
+<p align="center">Codex、Cursor 与 DeepSeek 用量监控</p>
 
-See [CHANGELOG.md](CHANGELOG.md) for the problem addressed by every release.
+<p align="center">
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 14+"></a>
+  <a href="https://www.swift.org/"><img src="https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5.0 / 6.0"></a>
+  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.0.0-4C7CF3?style=flat-square" alt="Version 5.0.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square" alt="MIT License"></a>
+</p>
 
-The installed app and Widget use the public name `AI Token Quota`. Internal
-`CodexWeek` target names, bundle IDs, the app path, LaunchAgent label and
-snapshot path remain unchanged so existing installations upgrade in place.
+BeaverMeter is a native macOS menu-bar app and WidgetKit extension that keeps
+Codex token activity and quota, Cursor model-call costs and Monthly allowance,
+and DeepSeek monthly usage and wallet balance in one place.
+
+See [CHANGELOG.md](CHANGELOG.md) for the problem addressed by every verifiable
+release.
 
 ## Interface
 
 The menu bar shows Codex tokens, Cursor's latest actual charge and DeepSeek's
-wallet balance in one compact line. Its popover adds Codex
-input, cached input, output and reasoning totals; Cursor's daily actual charge;
-and the latest 20 model calls with time, model, optional token count and charge.
-The DeepSeek section emphasizes wallet balance, with current-month cost, tokens
-and requests.
+wallet balance in one compact line. The popover expands this into Codex input,
+cached input, output and reasoning totals; Cursor's daily actual charge and the
+latest 20 model calls; and DeepSeek balance, current-month cost, tokens and
+requests.
 
-The Widget has no overall title and adapts three provider panels to each family:
+The Widget adapts the three provider panels to every supported family:
 
 | Family | Layout |
 | --- | --- |
 | Small | Three compact Codex, Cursor and DeepSeek rows |
-| Medium | Codex/Cursor side by side, DeepSeek spanning the bottom row |
-| Large | 2×2 layout with DeepSeek spanning the bottom row |
+| Medium | Codex/Cursor side by side, DeepSeek across the bottom |
+| Large | 2×2 layout with DeepSeek across the bottom |
 | Extra Large | Large layout plus real model details when available |
 
 <table>
@@ -41,7 +43,7 @@ The Widget has no overall title and adapts three provider panels to each family:
   </tr>
   <tr>
     <td colspan="2" align="center">
-      <img src="screenshots/menu-popover.png" alt="AI Token Quota Widget menu-bar popover with Demo data" width="390">
+      <img src="screenshots/menu-popover.png" alt="BeaverMeter menu-bar popover with Demo data" width="390">
     </td>
   </tr>
   <tr>
@@ -50,10 +52,10 @@ The Widget has no overall title and adapts three provider panels to each family:
   </tr>
   <tr>
     <td align="center">
-      <img src="screenshots/widget-small.png" alt="AI Token Quota Widget Small layout with Demo data" width="174">
+      <img src="screenshots/widget-small.png" alt="BeaverMeter Small Widget with Demo data" width="174">
     </td>
     <td align="center">
-      <img src="screenshots/widget-medium.png" alt="AI Token Quota Widget Medium layout with Demo data" width="352">
+      <img src="screenshots/widget-medium.png" alt="BeaverMeter Medium Widget with Demo data" width="352">
     </td>
   </tr>
   <tr>
@@ -62,25 +64,22 @@ The Widget has no overall title and adapts three provider panels to each family:
   </tr>
   <tr>
     <td align="center">
-      <img src="screenshots/widget-large.png" alt="AI Token Quota Widget Large layout with Demo data" width="352">
+      <img src="screenshots/widget-large.png" alt="BeaverMeter Large Widget with Demo data" width="352">
     </td>
     <td align="center">
-      <img src="screenshots/widget-extra-large.png" alt="AI Token Quota Widget Extra Large layout with Demo data" width="430">
+      <img src="screenshots/widget-extra-large.png" alt="BeaverMeter Extra Large Widget with Demo data" width="430">
     </td>
   </tr>
 </table>
 
-Every image above is generated from the bundled Preview snapshot and visibly
-marked as `Demo`. No screenshot contains live account values or personal Cursor
-usage.
+Every screenshot is generated from the bundled preview snapshot and marked
+`Demo`; none contains live account values or private Cursor activity.
 
-Codex and Cursor panels include a remaining value, reset countdown and progress
-line. Codex is teal and Cursor is indigo; values below 50% turn amber and values
-below 20% turn red. DeepSeek uses blue and shows its real wallet balance plus
-monthly activity. DeepSeek does not publish a quota limit or reset time, so the
-Widget deliberately does not invent a percentage or progress bar. Numeric
-values and status text remain visible, and stale, signed-out and error states
-are called out explicitly.
+Codex and Cursor show remaining allowance, reset countdown and a progress line.
+Codex is teal and Cursor is indigo; values below 50% turn amber and values below
+20% turn red. DeepSeek uses blue and reports its real wallet balance and monthly
+activity. Because DeepSeek does not publish a quota limit or reset time,
+BeaverMeter does not invent a percentage or progress bar.
 
 ## Data sources and semantics
 
@@ -90,17 +89,16 @@ The bundled collector uses
 [CodexBarCore](https://github.com/steipete/CodexBar/) pinned to the 0.56.5 release
 commit [`07f2a670229bca1a34bb7eda5284c89657b8df9a`](https://github.com/steipete/CodexBar/commit/07f2a670229bca1a34bb7eda5284c89657b8df9a).
 Its local scanner aggregates the current local day across `~/.codex/sessions`,
-including compressed sessions, duplicate events, file boundaries and the
-newly appended tail of a still-running Codex task.
+including compressed sessions, duplicate events, file boundaries and newly
+appended events in a still-running Codex task.
 
-The displayed total is `input + output`. Cached input is a subset of input and
-reasoning is a subset of output, so those counters are details and are not
-added a second time.
+The displayed total is `input + output`. Cached input is part of input and
+reasoning is part of output, so neither detail is counted twice.
 
 ### Cursor call costs and Monthly usage
 
 The collector reads Cursor's existing local sign-in token from `state.vscdb`,
-keeps it in process memory, and requests the same official Dashboard data used
+keeps it in process memory and requests the same official Dashboard data used
 by [cursor.com/dashboard/usage](https://cursor.com/dashboard/usage):
 
 ```text
@@ -108,19 +106,18 @@ https://cursor.com/api/dashboard/get-filtered-usage-events
 https://cursor.com/api/usage-summary
 ```
 
-Each call uses `chargedCents`, the amount actually deducted by Cursor. It does
-not substitute `tokenUsage.totalCents`, which is the model provider's list
-price. Calls charged at `$0.00` remain visible. If an otherwise valid call has
-no valid actual charge, that row says the charge is unknown and the daily total
-is withheld rather than understated.
+Each call uses `chargedCents`, the amount actually deducted by Cursor, rather
+than the model provider list price. `$0.00` calls remain visible. If a valid
+call has no valid actual charge, its charge is shown as unknown and the daily
+total is withheld instead of understated.
 
-Monthly usage uses `individualUsage.plan`, then `individualUsage.overall` when
-Cursor exposes an individual Enterprise allowance. `teamUsage.pooled` and
-administrator Team Caps are never used as personal Monthly usage.
+Monthly usage prefers `individualUsage.plan`, then `individualUsage.overall`
+when Cursor exposes an individual Enterprise allowance. Team pools and
+administrator Team Caps are never presented as personal Monthly usage.
 
 ### Codex quota
 
-The quota panel reads the existing Codex sign-in from `~/.codex/auth.json` and
+The quota panel reuses the existing Codex sign-in from `~/.codex/auth.json` and
 requests:
 
 ```text
@@ -133,19 +130,21 @@ balance, unlimited or exhausted state without inventing a percentage.
 
 ### DeepSeek usage and balance
 
-Choose **Connect in browser…** in the menu. The app opens the official DeepSeek
-Platform page in the system default browser and keeps checking for the completed
-sign-in in the background, so closing the menu popover does not interrupt login.
+Choose **Connect in browser…** in the menu. BeaverMeter opens the official
+DeepSeek Platform page and continues checking in the background, so closing the
+popover does not interrupt sign-in.
+
 For Chromium browsers (Chrome, Edge, Arc, Brave and compatible variants), the
 collector reads only the `userToken` entry belonging to
-`https://platform.deepseek.com`. With Safari, the app asks macOS Automation for
-access to the official DeepSeek tab and reads that same key through Safari's
-Apple Events interface. In Safari, first enable **Settings → Advanced → Show
-features for web developers**, then enable **Settings → Developer → Allow
-JavaScript from Apple Events**. In both cases the token is validated against
-DeepSeek before it is stored in
-`~/Library/Application Support/CodexWeek/` with mode `600`.
-The collector then requests the same official data used by
+`https://platform.deepseek.com`. With Safari, BeaverMeter requests macOS
+Automation access to the official DeepSeek tab and reads the same key through
+Safari's Apple Events interface. In Safari, first enable **Settings → Advanced
+→ Show features for web developers**, then **Settings → Developer → Allow
+JavaScript from Apple Events**.
+
+The token is validated against DeepSeek and stored at
+`~/Library/Application Support/BeaverMeter/deepseek-platform-token` with mode
+`600`. The collector requests the same official data used by
 [platform.deepseek.com/usage](https://platform.deepseek.com/usage):
 
 ```text
@@ -154,95 +153,105 @@ https://platform.deepseek.com/api/v0/usage/amount?month=<month>&year=<year>
 https://platform.deepseek.com/api/v0/usage/cost?month=<month>&year=<year>
 ```
 
-The displayed range starts at the first day of the current local month. Token
-totals combine cache-hit input, cache-miss input and output tokens exactly once.
-Costs and balances retain the currency returned by DeepSeek. DeepSeek is an
-independent data segment: an expired session or network failure leaves Codex
-and Cursor refreshes unaffected and preserves the last successful DeepSeek
-snapshot as stale.
+The range starts on the first day of the current local month. Token totals add
+cache-hit input, cache-miss input and output exactly once. Costs and balances
+retain DeepSeek's returned currency. DeepSeek failures do not interrupt Codex
+or Cursor refreshes, and the last successful DeepSeek value remains visible as
+stale.
 
 ## Refresh and fallback
 
-The app refreshes on launch, when the popover opens, on manual refresh and
-every five minutes through the existing LaunchAgent. The Widget requests a
-matching five-minute timeline, subject to WidgetKit scheduling.
+BeaverMeter refreshes on launch, whenever the popover opens, on manual refresh
+and every five minutes through its LaunchAgent. The Widget requests a matching
+five-minute timeline, subject to WidgetKit scheduling.
 
 Codex tokens, Cursor costs, Cursor quota, Codex quota and DeepSeek usage refresh
-independently.
-If one source fails, its most recent successful value remains visible as stale
-while the other sources keep updating. Cache older than three hours receives a
-strong warning. Missing live data is never replaced with preview data.
+independently. If one source fails, its latest successful value stays visible
+as stale while the others continue updating. Cache older than three hours gets
+a strong warning; missing live data is never replaced with preview data.
 
-Version 4.4 uses snapshot schema v5. Older snapshots are ignored and replaced
-by the first automatic refresh after upgrade; account credentials and local
-configuration are unaffected.
+The snapshot remains schema v5. Snapshots from schema v2-v4 are rejected and
+regenerated by the next refresh.
 
 ## Privacy
 
-- Credentials come from existing local Cursor and Codex sessions and remain in
-  collector memory. DeepSeek opens its official page in the default browser;
-  the collector inspects only that origin's `userToken` in Chromium local
-  storage, or the app reads the same key from the open official Safari tab via
-  macOS Automation. It validates the token and stores it locally with mode
-  `600` for background refresh.
-- The snapshot contains no access tokens, cookies, user/team/conversation IDs,
-  prompts or response content.
-- Requests are restricted to `cursor.com`, `chatgpt.com` and
-  `platform.deepseek.com`, require successful
-  HTTP status codes, validate their response shape and use finite timeouts.
+- Cursor and Codex credentials come from existing local sessions and remain in
+  collector memory. The validated DeepSeek browser token is stored locally with
+  mode `600` for background refresh.
+- The snapshot contains no tokens, cookies, user/team/conversation IDs, prompts
+  or response content.
+- Requests are limited to `cursor.com`, `chatgpt.com` and
+  `platform.deepseek.com`, require successful HTTP responses, validate response
+  shape and use finite timeouts.
 - The snapshot is atomically replaced at
-  `~/Library/Application Support/CodexWeek/codex-week-snapshot.json`.
-- Its directory is mode `700` and the snapshot is mode `600`.
-- All repository screenshots use deterministic `Demo` data from
-  `UsageSnapshot.preview`; they never contain live account values or personal
-  Cursor usage.
+  `~/Library/Application Support/BeaverMeter/beaver-meter-snapshot.json`.
+- The data directory is mode `700`; credentials and snapshots are mode `600`.
+- Repository screenshots use deterministic `UsageSnapshot.preview` data only.
 
 ## Requirements and installation
 
 - macOS 14 or newer
 - Cursor signed in locally
 - Codex desktop app or CLI used locally
-- Full Xcode in `/Applications/Xcode.app`
+- Full Xcode at `/Applications/Xcode.app`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 Install or upgrade:
 
 ```bash
 brew install xcodegen
-chmod +x scripts/*.sh Tests/collector_test.sh
+chmod +x scripts/*.sh Tests/*.sh
 ./scripts/install.sh
 ```
 
 The installer asks for an optional Apple Developer Team ID, a unique bundle
-prefix, local data paths and a refresh interval (five minutes by default). It
-builds a Release app at `~/Applications/CodexWeek.app`, updates the existing
-`io.github.codexweek.refresh` LaunchAgent, registers the Widget and starts the
+prefix, local data paths and a refresh interval. It builds
+`~/Applications/BeaverMeter.app`, installs the
+`io.github.beavermeter.refresh` LaunchAgent, registers the Widget and starts the
 menu-bar app.
+
+### Upgrading from 4.4.0
+
+The 5.0.0 installer migrates `config.env`, the DeepSeek token and a valid schema
+v5 snapshot from `~/Library/Application Support/CodexWeek/` into the new
+BeaverMeter data directory. Existing destination files always win. It keeps a
+rollback copy while validating the replacement; after a successful install it
+removes the old app, LaunchAgent, data and logs. If validation fails, the old
+installation is restored and the legacy data remains available.
+
+The App and Widget now have new bundle IDs and the Widget kind changed. macOS
+cannot convert an existing desktop Widget automatically: remove the old Widget,
+then add **BeaverMeter** from **Edit Widgets**.
+
+The new build settings and script overrides are `BEAVERMETER_*` and
+`BEAVER_METER_CONFIG`. Version 5.0.0 also accepts the legacy `CODEXWEEK_*` and
+`CODEX_WEEK_CONFIG` names as lower-priority aliases.
 
 ## Development and tests
 
-Generate the project and run the Swift tests:
+Generate the project and run Swift tests:
 
 ```bash
 xcodegen generate
 xcodebuild \
-  -project CodexWeek.xcodeproj \
-  -scheme CodexWeek \
-  -derivedDataPath /tmp/codexweek-derived \
+  -project BeaverMeter.xcodeproj \
+  -scheme BeaverMeter \
+  -derivedDataPath /tmp/beavermeter-derived \
   test
 ```
 
-Run the network-free collector integration test against that build:
+Run the network-free integration and migration tests:
 
 ```bash
 ./Tests/collector_test.sh \
-  /tmp/codexweek-derived/Build/Products/Debug/CodexWeekCollector
+  /tmp/beavermeter-derived/Build/Products/Debug/BeaverMeterCollector
+./Tests/migration_test.sh
 ```
 
-The `CodexWeekPreviewRenderer` target regenerates the README screenshots from
+The `BeaverMeterPreviewRenderer` target regenerates README screenshots from
 `UsageSnapshot.preview`; it never reads the production snapshot.
 
-The collector accepts these fixture overrides:
+Collector fixture overrides:
 
 ```text
 CODEX_TOKEN_FIXTURE
@@ -255,43 +264,37 @@ CURSOR_STATE_DB
 CODEX_TOKEN_CACHE_ROOT
 ```
 
-Coverage includes schema v5 decoding, rejection of v2-v4 caches, percent
-clamping, Codex token subset semantics, live-rollout tail updates, single and
-multiple quota windows, tolerant Cursor number decoding, zero-cost events,
-pagination boundaries, actual-charge
-totals, personal Monthly usage precedence, independent fallback, snapshot
-permissions and privacy. SwiftUI previews cover all four Widget families plus
-ready, stale, signed-out, error, long-value and missing-reset states.
+Coverage includes schema v5 round trips, v2-v4 rejection, percent clamping,
+live-rollout token growth, quota-window selection, tolerant Cursor number
+decoding, actual-charge totals, Monthly usage precedence, independent stale
+fallback, migration precedence, file permissions and snapshot privacy.
 
 ## Troubleshooting
 
 - **Cursor says Sign in:** open Cursor, confirm the intended account is active,
-  then click refresh.
+  then refresh.
 - **Codex has no token data:** run at least one local Codex session and refresh.
-- **DeepSeek says Connect:** choose **Connect in browser…** and finish signing
-  in on the official page. The app continues checking after the menu closes.
-  Safari may ask for Automation permission. Enable **Settings → Advanced →
-  Show features for web developers**, followed by **Settings → Developer →
-  Allow JavaScript from Apple Events**. Use **Check now** after enabling it, or
-  **Reconnect in browser…** if the session expires.
-- **Data is stale:** inspect `~/Library/Logs/CodexWeek/` and verify access to
+- **DeepSeek says Connect:** choose **Connect in browser…** and finish signing in
+  on the official page. Safari may request Automation permission; enable both
+  developer settings described above, then use **Check now**.
+- **Data is stale:** inspect `~/Library/Logs/BeaverMeter/` and verify access to
   `cursor.com`, `chatgpt.com` and `platform.deepseek.com`.
-- **Widget is missing or appears more than once:** run
-  `./scripts/repair_widget.sh`. It removes stale Xcode build registrations,
-  registers only the installed copy, and refreshes WidgetKit.
+- **Widget is missing or duplicated:** run `./scripts/repair_widget.sh`, then add
+  BeaverMeter again from **Edit Widgets** if upgrading from 4.4.0.
 
 ## Project structure
 
-- `App/` — application entry, asynchronous state and menu popover components
-- `Collector/` — Codex, Cursor and DeepSeek clients, fallback and snapshot writing
-- `Widget/` — timeline entry, adaptive quota panels and state previews
-- `Shared/` — schema v5 models, snapshot loading and formatters
-- `Tests/` — Swift tests and network-free collector fixtures
-- `PreviewRenderer/` — deterministic menu and Widget screenshot generator
-- `scripts/` — install, refresh, Widget repair and uninstall helpers
+- `App/` — app entry, state and menu popover
+- `Collector/` — Codex, Cursor and DeepSeek clients and snapshot writer
+- `Widget/` — timeline provider, adaptive panels and previews
+- `Shared/` — schema v5 models, loading and formatters
+- `Tests/` — Swift tests, migration test and network-free fixtures
+- `PreviewRenderer/` — deterministic screenshot generator
+- `Design/Logo/` — BeaverMeter logo master
+- `scripts/` — install, refresh, migration, Widget repair and uninstall helpers
 
 ## License
 
-This project is released under the MIT License. CodexBarCore and adapted
+BeaverMeter is released under the MIT License. CodexBarCore and adapted
 CodexBar code are used under CodexBar's MIT License; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

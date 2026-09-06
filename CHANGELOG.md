@@ -4,6 +4,33 @@ This file records the user problem addressed by each verifiable release in the
 repository. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-09-06
+
+### Added
+
+- Added the BeaverMeter beaver-head logo and a complete 16–1024 px macOS App
+  Icon set.
+- Added migration tests for first upgrade, destination precedence, credential
+  permissions and rejection of pre-v5 snapshots.
+
+### Changed
+
+- Renamed the app, Widget, schemes, targets, Swift types, collector helper,
+  bundle IDs, LaunchAgent and storage paths from AI Token Quota / CodexWeek to
+  BeaverMeter.
+- Moved new configuration to `BEAVERMETER_*` and `BEAVER_METER_CONFIG`, while
+  accepting the old environment names as lower-priority 5.0.0 aliases.
+- The installer now migrates existing configuration, DeepSeek credentials and
+  valid schema v5 snapshots without overwriting newer destination files, and
+  restores the previous installation if replacement validation fails.
+- The Widget uses a new bundle ID and kind. Existing Widgets must be removed
+  and added again as BeaverMeter after upgrading.
+
+### Removed
+
+- Removed the old app, LaunchAgent, data and log locations after a successful
+  migration and installation.
+
 ## [4.4.0] - 2026-09-06
 
 ### Fixed
@@ -53,6 +80,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added recent Cursor call details, local Codex session aggregation, independent
   stale-data fallback, deterministic previews and network-free fixtures.
 
+[5.0.0]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.4.0...v5.0.0
 [4.4.0]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.3...v4.4.0
 [4.3]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.0...v4.3
 [4.0]: https://github.com/fusheng-ji/token_quota_widget/tree/v4.0
