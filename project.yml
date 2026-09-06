@@ -1,4 +1,4 @@
-name: CodexWeek
+name: BeaverMeter
 packages:
   CodexBar:
     url: https://github.com/steipete/CodexBar.git
@@ -15,34 +15,34 @@ settings:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ${CODEXWEEK_DEVELOPMENT_TEAM}
+    DEVELOPMENT_TEAM: ${BEAVERMETER_DEVELOPMENT_TEAM}
 targets:
-  CodexWeek:
+  BeaverMeter:
     type: application
     platform: macOS
     sources:
       - path: App
       - path: Shared
-      - path: scripts/collect_codex_week.sh
+      - path: scripts/collect_beaver_meter.sh
         buildPhase: resources
       - path: LICENSE
         buildPhase: resources
       - path: THIRD_PARTY_NOTICES.md
         buildPhase: resources
     dependencies:
-      - target: CodexWeekWidgetExtension
+      - target: BeaverMeterWidgetExtension
         embed: true
-      - target: CodexWeekCollector
+      - target: BeaverMeterCollector
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek
-        PRODUCT_NAME: CodexWeek
+        PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter
+        PRODUCT_NAME: BeaverMeter
         CURRENT_PROJECT_VERSION: 22
         MARKETING_VERSION: 4.4.0
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: AI Token Quota
-        INFOPLIST_KEY_NSAppleEventsUsageDescription: AI Token Quota reads only the DeepSeek session from the official Safari tab you opened.
+        INFOPLIST_KEY_CFBundleDisplayName: BeaverMeter
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: BeaverMeter reads only the DeepSeek session from the official Safari tab you opened.
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_LSUIElement: YES
         ENABLE_APP_SANDBOX: NO
@@ -53,11 +53,11 @@ targets:
           HELPER_DIR="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
           RESOURCE_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
           mkdir -p "$HELPER_DIR"
-          ditto "${BUILT_PRODUCTS_DIR}/CodexWeekCollector" "$HELPER_DIR/CodexWeekCollector"
-          chmod 755 "$HELPER_DIR/CodexWeekCollector"
+          ditto "${BUILT_PRODUCTS_DIR}/BeaverMeterCollector" "$HELPER_DIR/BeaverMeterCollector"
+          chmod 755 "$HELPER_DIR/BeaverMeterCollector"
           if [ "${CODE_SIGNING_ALLOWED}" = "YES" ]; then
             HELPER_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"
-            codesign --force --sign "$HELPER_IDENTITY" --timestamp=none "$HELPER_DIR/CodexWeekCollector"
+            codesign --force --sign "$HELPER_IDENTITY" --timestamp=none "$HELPER_DIR/BeaverMeterCollector"
           fi
           for BUNDLE_NAME in CodexBar_CodexBarCore SweetCookieKit_SweetCookieKit swift-crypto_Crypto; do
             if [ -d "${BUILT_PRODUCTS_DIR}/${BUNDLE_NAME}.bundle" ]; then
@@ -65,7 +65,7 @@ targets:
             fi
           done
         basedOnDependencyAnalysis: false
-  CodexWeekCollector:
+  BeaverMeterCollector:
     type: tool
     platform: macOS
     sources:
@@ -78,11 +78,11 @@ targets:
         product: SweetCookieKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.collector
-        PRODUCT_NAME: CodexWeekCollector
+        PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter.collector
+        PRODUCT_NAME: BeaverMeterCollector
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_ALLOWED: NO
-  CodexWeekWidgetExtension:
+  BeaverMeterWidgetExtension:
     type: app-extension
     platform: macOS
     sources:
@@ -91,21 +91,21 @@ targets:
     info:
       path: Widget/Info.plist
       properties:
-        CFBundleDisplayName: AI Token Quota
+        CFBundleDisplayName: BeaverMeter
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.widget
-        PRODUCT_NAME: CodexWeekWidgetExtension
+        PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter.widget
+        PRODUCT_NAME: BeaverMeterWidgetExtension
         CURRENT_PROJECT_VERSION: 22
         MARKETING_VERSION: 4.4.0
         SKIP_INSTALL: YES
         ENABLE_APP_SANDBOX: YES
-        CODE_SIGN_ENTITLEMENTS: Widget/CodexWeekWidget.entitlements
-  CodexWeekTests:
+        CODE_SIGN_ENTITLEMENTS: Widget/BeaverMeterWidget.entitlements
+  BeaverMeterTests:
     type: bundle.unit-test
     platform: macOS
     sources:
@@ -113,10 +113,10 @@ targets:
       - path: Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.tests
+        PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGNING_ALLOWED: NO
-  CodexWeekPreviewRenderer:
+  BeaverMeterPreviewRenderer:
     type: tool
     platform: macOS
     sources:
@@ -132,26 +132,26 @@ targets:
       - path: Widget/QuotaWidgetContent.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.preview-renderer
-        PRODUCT_NAME: CodexWeekPreviewRenderer
+        PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter.preview-renderer
+        PRODUCT_NAME: BeaverMeterPreviewRenderer
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_ALLOWED: NO
 schemes:
-  CodexWeek:
+  BeaverMeter:
     build:
       targets:
-        CodexWeek: all
-        CodexWeekWidgetExtension: all
-        CodexWeekCollector: all
+        BeaverMeter: all
+        BeaverMeterWidgetExtension: all
+        BeaverMeterCollector: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - CodexWeekTests
-  CodexWeekPreviewRenderer:
+        - BeaverMeterTests
+  BeaverMeterPreviewRenderer:
     build:
       targets:
-        CodexWeekPreviewRenderer: all
+        BeaverMeterPreviewRenderer: all
     run:
       config: Debug

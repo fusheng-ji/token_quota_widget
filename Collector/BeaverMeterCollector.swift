@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 @main
-struct CodexWeekCollector {
+struct BeaverMeterCollector {
     static func main() async {
         if CommandLine.arguments.contains("--import-deepseek-browser-session") {
             await importDeepSeekBrowserSession()

@@ -9,7 +9,7 @@ extension UsageSnapshot {
             }
             return URL(fileURLWithPath: String(cString: entry.pointee.pw_dir), isDirectory: true)
         }()
-        return home.appendingPathComponent("Library/Application Support/CodexWeek/codex-week-snapshot.json")
+        return home.appendingPathComponent("Library/Application Support/BeaverMeter/beaver-meter-snapshot.json")
     }
 
     static func load() -> UsageSnapshot {

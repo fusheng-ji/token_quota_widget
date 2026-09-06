@@ -147,61 +147,61 @@ extension UsageSnapshot {
 }
 
 #Preview("Small", as: .systemSmall) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .preview)
+    BeaverMeterEntry(date: .now, snapshot: .preview)
 }
 
 #Preview("Medium", as: .systemMedium) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .preview)
+    BeaverMeterEntry(date: .now, snapshot: .preview)
 }
 
 #Preview("Large", as: .systemLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .preview)
+    BeaverMeterEntry(date: .now, snapshot: .preview)
 }
 
 #Preview("Extra Large", as: .systemExtraLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .preview)
+    BeaverMeterEntry(date: .now, snapshot: .preview)
 }
 
 #Preview("Stale", as: .systemLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .widgetStalePreview)
+    BeaverMeterEntry(date: .now, snapshot: .widgetStalePreview)
 }
 
 #Preview("Unavailable", as: .systemLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .unavailable)
+    BeaverMeterEntry(date: .now, snapshot: .unavailable)
 }
 
 #Preview("No reset", as: .systemLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .widgetNoResetPreview)
+    BeaverMeterEntry(date: .now, snapshot: .widgetNoResetPreview)
 }
 
 #Preview("DeepSeek signed out", as: .systemMedium) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .widgetDeepSeekSignedOutPreview)
+    BeaverMeterEntry(date: .now, snapshot: .widgetDeepSeekSignedOutPreview)
 }
 
 #Preview("DeepSeek error", as: .systemLarge) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .widgetDeepSeekErrorPreview)
+    BeaverMeterEntry(date: .now, snapshot: .widgetDeepSeekErrorPreview)
 }
 
 #Preview("DeepSeek long balance", as: .systemSmall) {
-    CodexWeekWidget()
+    BeaverMeterWidget()
 } timeline: {
-    CodexWeekEntry(date: .now, snapshot: .widgetDeepSeekLongValuePreview)
+    BeaverMeterEntry(date: .now, snapshot: .widgetDeepSeekLongValuePreview)
 }

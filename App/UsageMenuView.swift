@@ -52,7 +52,7 @@ struct UsageMenuView: View {
     private var header: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI Token Quota")
+                Text("BeaverMeter")
                     .font(.headline)
                 Text(
                     store.isRefreshing

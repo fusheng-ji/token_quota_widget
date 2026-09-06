@@ -41,7 +41,7 @@ enum DeepSeekSafariSessionReader {
                 )
             }
             return .unavailable(
-                "Safari session access was blocked. Allow AI Token Quota to control Safari in System Settings → Privacy & Security → Automation, then click Check now."
+                "Safari session access was blocked. Allow BeaverMeter to control Safari in System Settings → Privacy & Security → Automation, then click Check now."
             )
         }
         guard let rawValue = result.stringValue,

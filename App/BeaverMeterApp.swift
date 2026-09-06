@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct CodexWeekApp: App {
+struct BeaverMeterApp: App {
     @StateObject private var store = UsageStore()
 
     var body: some Scene {

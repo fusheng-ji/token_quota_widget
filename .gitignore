@@ -1,5 +1,6 @@
 .DS_Store
 CodexWeek.xcodeproj/
+BeaverMeter.xcodeproj/
 .build/
 build-*/
 DerivedData/

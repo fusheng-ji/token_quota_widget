@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_dir="${0:A:h:h}"
 fixtures="$project_dir/Tests/Fixtures"
-collector="${1:-${CODEXWEEK_COLLECTOR:-/private/tmp/codexweek-derived/Build/Products/Debug/CodexWeekCollector}}"
+collector="${1:-${BEAVERMETER_COLLECTOR:-/private/tmp/beavermeter-derived/Build/Products/Debug/BeaverMeterCollector}}"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/cursor-codex-tests.XXXXXX")"
 
 cleanup() {

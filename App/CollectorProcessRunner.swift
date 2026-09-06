@@ -7,7 +7,7 @@ struct CollectorProcessResult: Sendable {
 
 enum CollectorProcessRunner {
     private static let missingCollectorMessage =
-        "The bundled usage collector is missing. Reinstall AI Token Quota."
+        "The bundled usage collector is missing. Reinstall BeaverMeter."
 
     static func refresh(helper: URL, script: URL?, output: String) -> CollectorProcessResult {
         if FileManager.default.isExecutableFile(atPath: helper.path) {

@@ -94,7 +94,7 @@ final class UsageStore: ObservableObject {
         refreshError = nil
         lastAutomaticRefresh = .now
 
-        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/CodexWeekCollector")
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
         let script = Bundle.main.url(forResource: "collect_codex_week", withExtension: "sh")
         let output = UsageSnapshot.snapshotURL.path
 
@@ -155,7 +155,7 @@ final class UsageStore: ObservableObject {
 
     private func beginDeepSeekBrowserImport() {
         deepSeekConnectionTask?.cancel()
-        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/CodexWeekCollector")
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
 
         deepSeekConnectionTask = Task { [weak self] in
             guard let self else { return }

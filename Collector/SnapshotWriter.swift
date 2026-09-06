@@ -27,7 +27,7 @@ enum SnapshotWriter {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(snapshot)
         let temporary = directory.appendingPathComponent(
-            ".codex-week-snapshot-\(UUID().uuidString).tmp"
+            ".beaver-meter-snapshot-\(UUID().uuidString).tmp"
         )
         try data.write(to: temporary, options: .withoutOverwriting)
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
