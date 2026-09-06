@@ -103,21 +103,7 @@ extension UsageSnapshot {
                     monthCosts: [DeepSeekMoney(currency: "USD", amount: 1.24)],
                     balances: [DeepSeekMoney(currency: "USD", amount: 18.76)],
                     grantedBalances: [DeepSeekMoney(currency: "USD", amount: 3.00)],
-                    totalCosts: [DeepSeekMoney(currency: "USD", amount: 7.80)],
-                    models: [
-                        DeepSeekModelUsage(
-                            model: "deepseek-v4-flash",
-                            tokens: 1_800_000,
-                            requests: 96,
-                            costs: [DeepSeekMoney(currency: "USD", amount: 0.72)]
-                        ),
-                        DeepSeekModelUsage(
-                            model: "deepseek-v4-pro",
-                            tokens: 600_000,
-                            requests: 32,
-                            costs: [DeepSeekMoney(currency: "USD", amount: 0.52)]
-                        )
-                    ]
+                    totalCosts: [DeepSeekMoney(currency: "USD", amount: 7.80)]
                 )
             )
         )

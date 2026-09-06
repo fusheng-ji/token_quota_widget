@@ -126,8 +126,7 @@ extension UsageSnapshot {
                     monthCosts: [DeepSeekMoney(currency: "EUR", amount: 123_456.789)],
                     balances: [DeepSeekMoney(currency: "EUR", amount: 1_234_567.89)],
                     grantedBalances: [],
-                    totalCosts: [],
-                    models: []
+                    totalCosts: []
                 )
             )
         )

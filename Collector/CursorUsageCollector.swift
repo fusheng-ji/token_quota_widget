@@ -160,8 +160,8 @@ enum CursorUsageCollector {
         } else {
             nil
         }
-        let detail = "\(CollectorSupport.formatUSD(used)) / \(CollectorSupport.formatUSD(limit))" +
-            " · \(CollectorSupport.formatUSD(remaining)) left"
+        let detail = "\(UsageFormatting.usdCode(used)) / \(UsageFormatting.usdCode(limit))" +
+            " · \(UsageFormatting.usdCode(remaining)) left"
         let quota = CompactQuota(
             label: "Cursor Monthly",
             used: used,

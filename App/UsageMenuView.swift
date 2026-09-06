@@ -198,17 +198,6 @@ struct UsageMenuView: View {
                     )
                 }
 
-                if !usage.models.isEmpty {
-                    Text("Models")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(usage.models.prefix(8))) { model in
-                            DeepSeekModelRow(model: model)
-                            if model.id != usage.models.prefix(8).last?.id { Divider() }
-                        }
-                    }
-                }
             } else {
                 EmptyState(message: store.snapshot.deepseekUsage.message ?? "No DeepSeek usage yet.")
             }

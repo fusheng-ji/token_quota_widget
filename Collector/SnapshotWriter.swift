@@ -3,8 +3,7 @@ import Foundation
 
 enum SnapshotWriter {
     static func loadPrevious(from url: URL) -> UsageSnapshot {
-        guard let data = try? Data(contentsOf: url) else { return .unavailable }
-        return UsageSnapshot.decode(data) ?? .unavailable
+        UsageSnapshot.load(from: url)
     }
 
     static func write(_ snapshot: UsageSnapshot, to url: URL) throws {

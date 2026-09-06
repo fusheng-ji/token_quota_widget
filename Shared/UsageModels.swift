@@ -86,14 +86,6 @@ struct DeepSeekMoney: Codable, Hashable, Identifiable, Sendable {
     let amount: Double
 }
 
-struct DeepSeekModelUsage: Codable, Hashable, Identifiable, Sendable {
-    var id: String { model }
-    let model: String
-    let tokens: Int
-    let requests: Int
-    let costs: [DeepSeekMoney]
-}
-
 struct DeepSeekUsageTotals: Codable, Hashable, Sendable {
     let monthTokens: Int?
     let monthRequests: Int?
@@ -101,5 +93,4 @@ struct DeepSeekUsageTotals: Codable, Hashable, Sendable {
     let balances: [DeepSeekMoney]
     let grantedBalances: [DeepSeekMoney]
     let totalCosts: [DeepSeekMoney]
-    let models: [DeepSeekModelUsage]
 }

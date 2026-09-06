@@ -1,7 +1,7 @@
 import Foundation
 
 struct UsageSnapshot: Codable, Hashable, Sendable {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
 
     let schemaVersion: Int
     let generatedAt: Date
@@ -21,5 +21,3 @@ struct UsageSnapshot: Codable, Hashable, Sendable {
         deepseekUsage: .unavailable("Connect DeepSeek in your browser to view account usage and balance.")
     )
 }
-
-typealias CodexWeekSnapshot = UsageSnapshot

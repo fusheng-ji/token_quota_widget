@@ -39,16 +39,6 @@ enum CollectorSupport {
         return .error
     }
 
-    static func formatUSD(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.currencySymbol = "US$"
-        formatter.minimumFractionDigits = value.rounded() == value ? 0 : 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "US$%.2f", value)
-    }
-
     static func parseISODate(_ string: String?) -> Date? {
         guard let string else { return nil }
         let fractional = ISO8601DateFormatter()

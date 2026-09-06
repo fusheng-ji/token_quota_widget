@@ -46,29 +46,28 @@ final class UsageStore: ObservableObject {
     }
 
     var menuBarText: String {
-        let tokens = UsageFormatting.tokens(snapshot.codexTokens.value?.totalTokens)
-        let latestCost = UsageFormatting.usd(
-            snapshot.cursorCosts.value?.latestEvent?.costUSD,
-            minimumDigits: 2,
-            maximumDigits: 3
-        )
-        let deepSeekBalance = UsageFormatting.money(
-            UsageFormatting.firstValidMoney(snapshot.deepseekUsage.value?.balances ?? [])
-        )
-        return "\(tokens) · C \(latestCost) · D \(deepSeekBalance)"
+        let values = menuBarValues
+        return "\(values.tokens) · C \(values.latestCost) · D \(values.deepSeekBalance)"
     }
 
     var menuBarAccessibilityText: String {
-        let tokens = UsageFormatting.tokens(snapshot.codexTokens.value?.totalTokens)
-        let latestCost = UsageFormatting.usd(
-            snapshot.cursorCosts.value?.latestEvent?.costUSD,
-            minimumDigits: 2,
-            maximumDigits: 3
+        let values = menuBarValues
+        return "Codex today \(values.tokens) tokens, Cursor latest call \(values.latestCost), " +
+            "DeepSeek balance \(values.deepSeekBalance)"
+    }
+
+    private var menuBarValues: (tokens: String, latestCost: String, deepSeekBalance: String) {
+        (
+            UsageFormatting.tokens(snapshot.codexTokens.value?.totalTokens),
+            UsageFormatting.usd(
+                snapshot.cursorCosts.value?.latestEvent?.costUSD,
+                minimumDigits: 2,
+                maximumDigits: 3
+            ),
+            UsageFormatting.money(
+                UsageFormatting.firstValidMoney(snapshot.deepseekUsage.value?.balances ?? [])
+            )
         )
-        let deepSeekBalance = UsageFormatting.money(
-            UsageFormatting.firstValidMoney(snapshot.deepseekUsage.value?.balances ?? [])
-        )
-        return "Codex today \(tokens) tokens, Cursor latest call \(latestCost), DeepSeek balance \(deepSeekBalance)"
     }
 
     var isConnectingDeepSeek: Bool {
@@ -101,7 +100,7 @@ final class UsageStore: ObservableObject {
 
         Task {
             let result = await Task.detached(priority: .utility) {
-                Self.runCollector(helper: helper, script: script, output: output)
+                CollectorProcessRunner.refresh(helper: helper, script: script, output: output)
             }.value
 
             snapshot = UsageSnapshot.load()
@@ -163,7 +162,7 @@ final class UsageStore: ObservableObject {
             for _ in 0..<100 {
                 guard !Task.isCancelled else { return }
                 let result = await Task.detached(priority: .utility) {
-                    Self.runDeepSeekBrowserImporter(helper: helper)
+                    CollectorProcessRunner.importBrowserSession(helper: helper)
                 }.value
 
                 guard !Task.isCancelled else { return }
@@ -184,7 +183,7 @@ final class UsageStore: ObservableObject {
                 switch DeepSeekSafariSessionReader.readToken() {
                 case let .token(token):
                     let safariResult = await Task.detached(priority: .utility) {
-                        Self.runDeepSeekTokenImporter(helper: helper, token: token)
+                        CollectorProcessRunner.importToken(helper: helper, token: token)
                     }.value
                     if safariResult.status == 0 {
                         self.deepSeekConnectionState = .loadingUsage
@@ -215,98 +214,6 @@ final class UsageStore: ObservableObject {
             self.deepSeekConnectionState = .failed(
                 "No signed-in DeepSeek session was found in the system browser."
             )
-        }
-    }
-
-    nonisolated private static func runCollector(
-        helper: URL,
-        script: URL?,
-        output: String
-    ) -> (status: Int32, message: String) {
-        let process = Process()
-        let errorPipe = Pipe()
-
-        if FileManager.default.isExecutableFile(atPath: helper.path) {
-            process.executableURL = helper
-            process.arguments = ["--output", output]
-        } else if let script {
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = [script.path, output]
-        } else {
-            return (-1, "The bundled usage collector is missing. Reinstall AI Token Quota.")
-        }
-
-        process.standardError = errorPipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let message = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return (process.terminationStatus, message)
-        } catch {
-            return (-1, error.localizedDescription)
-        }
-    }
-
-    nonisolated private static func runDeepSeekBrowserImporter(
-        helper: URL
-    ) -> (status: Int32, message: String) {
-        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            return (-1, "The bundled usage collector is missing. Reinstall AI Token Quota.")
-        }
-
-        let process = Process()
-        let errorPipe = Pipe()
-        process.executableURL = helper
-        process.arguments = ["--import-deepseek-browser-session"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let message = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return (process.terminationStatus, message)
-        } catch {
-            return (-1, error.localizedDescription)
-        }
-    }
-
-    nonisolated private static func runDeepSeekTokenImporter(
-        helper: URL,
-        token: String
-    ) -> (status: Int32, message: String) {
-        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
-            return (-1, "The bundled usage collector is missing. Reinstall AI Token Quota.")
-        }
-
-        let process = Process()
-        let inputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.executableURL = helper
-        process.arguments = ["--import-deepseek-token-stdin"]
-        process.standardInput = inputPipe
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-            inputPipe.fileHandleForWriting.write(Data(token.utf8))
-            try? inputPipe.fileHandleForWriting.close()
-            process.waitUntilExit()
-            let message = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return (process.terminationStatus, message)
-        } catch {
-            try? inputPipe.fileHandleForWriting.close()
-            return (-1, error.localizedDescription)
         }
     }
 }

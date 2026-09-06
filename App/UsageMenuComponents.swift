@@ -79,27 +79,6 @@ struct DeepSeekDetailLine: View {
     }
 }
 
-struct DeepSeekModelRow: View {
-    let model: DeepSeekModelUsage
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.model).font(.callout).lineLimit(1)
-                Text("\(UsageFormatting.tokens(model.tokens)) tokens · \(model.requests) requests")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Text(UsageFormatting.moneyList(model.costs))
-                .font(.callout.weight(.semibold))
-                .monospacedDigit()
-        }
-        .padding(.vertical, 6)
-    }
-}
-
 struct StatusPill<Value: Codable & Hashable & Sendable>: View {
     let value: UsageValue<Value>
 

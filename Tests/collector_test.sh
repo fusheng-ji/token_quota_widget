@@ -22,12 +22,11 @@ CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
 DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
-DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount.json" \
-DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
   "$collector" --output "$snapshot" >/dev/null
 
 jq -e '
-  .schemaVersion == 4 and
+  .schemaVersion == 5 and
   .codexTokens.status == "ready" and
   .codexTokens.value.totalTokens == 1000 and
   .codexTokens.value.inputTokens == 900 and
@@ -46,7 +45,7 @@ jq -e '
   and .deepseekUsage.value.monthRequests == 16
   and .deepseekUsage.value.monthCosts[0].amount == 1.24
   and .deepseekUsage.value.balances[0].amount == 18.76
-  and (.deepseekUsage.value.models | length) == 2
+  and (.deepseekUsage.value | has("models") | not)
 ' "$snapshot" >/dev/null
 
 [[ "$(stat -f '%Lp' "$snapshot")" == "600" ]]
@@ -77,8 +76,7 @@ CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
 CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
 DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
-DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount.json" \
-DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
   "$collector" --output "$snapshot" >/dev/null
 jq -e '.codexTokens.value.totalTokens == 110' "$snapshot" >/dev/null
 
@@ -92,8 +90,7 @@ CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
 CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
 DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
-DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount.json" \
-DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
   "$collector" --output "$snapshot" >/dev/null
 jq -e '.codexTokens.value.totalTokens == 200' "$snapshot" >/dev/null
 
@@ -118,8 +115,7 @@ CURSOR_STATE_DB="$test_dir/missing-cursor.vscdb" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
 DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
-DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount-invalid.json" \
-DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage-invalid.json" \
   "$collector" --output "$snapshot" >/dev/null
 
 jq -e '

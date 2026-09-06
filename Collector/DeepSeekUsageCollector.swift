@@ -25,18 +25,21 @@ private struct DeepSeekSummaryPayload: Sendable {
     let totalCosts: [DeepSeekMoney]
 }
 
-private struct DeepSeekAmountPayload: Sendable {
-    struct Model: Sendable {
-        let name: String
-        let tokens: Int
-        let requests: Int
-    }
-    let models: [Model]
-}
+private struct DeepSeekUsagePayload: Decodable, Sendable {
+    let monthTokens: Int
+    let monthRequests: Int
+    let monthCost: Double?
+    let currency: String
 
-private struct DeepSeekCostPayload: Sendable {
-    let totals: [DeepSeekMoney]
-    let byModel: [String: [DeepSeekMoney]]
+    func validated() throws -> Self {
+        guard monthTokens >= 0,
+              monthRequests >= 0,
+              monthCost.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              !currency.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DeepSeekPlatformError.invalidResponse("DeepSeek usage changed format.")
+        }
+        return self
+    }
 }
 
 struct DeepSeekPlatformClient {
@@ -64,106 +67,16 @@ struct DeepSeekPlatformClient {
         _ = try await fetchSummary(token: token)
     }
 
-    fileprivate func fetchAmount(token: String, start: Date, end: Date, timezoneSeconds: Int) async throws -> DeepSeekAmountPayload {
-        let data = try await data(
-            path: "/api/v0/usage/by_api_key/amount",
-            token: token,
-            query: usageQuery(start: start, end: end, timezoneSeconds: timezoneSeconds),
-            fixtureEnvironmentKey: "DEEPSEEK_AMOUNT_FIXTURE"
-        )
-        let root = try object(data)
-        let business = try businessData(root, endpoint: "token usage")
-        guard let series = business["series"] as? [[String: Any]] else {
-            throw DeepSeekPlatformError.invalidResponse("DeepSeek token usage changed format.")
-        }
-
-        var totals: [String: (tokens: Int, requests: Int)] = [:]
-        for item in series {
-            guard let model = nonempty(item["model"]),
-                  let buckets = item["buckets"] as? [[String: Any]] else {
-                throw DeepSeekPlatformError.invalidResponse("DeepSeek token usage changed format.")
-            }
-            for bucket in buckets {
-                guard let usage = bucket["usage"] as? [String: Any],
-                      let cacheHit = safeIntOptional(usage["PROMPT_CACHE_HIT_TOKEN"]),
-                      let cacheMiss = safeIntOptional(usage["PROMPT_CACHE_MISS_TOKEN"]),
-                      let response = safeIntOptional(usage["RESPONSE_TOKEN"]),
-                      let requests = safeIntOptional(usage["REQUEST"]) else {
-                    throw DeepSeekPlatformError.invalidResponse("DeepSeek token usage changed format.")
-                }
-                let tokens = safeSum([cacheHit, cacheMiss, response])
-                let current = totals[model, default: (0, 0)]
-                totals[model] = (
-                    safeSum([current.tokens, tokens]),
-                    safeSum([current.requests, requests])
-                )
-            }
-        }
-        return DeepSeekAmountPayload(
-            models: totals.map { .init(name: $0.key, tokens: $0.value.tokens, requests: $0.value.requests) }
-        )
-    }
-
-    fileprivate func fetchCost(token: String, start: Date, end: Date, timezoneSeconds: Int) async throws -> DeepSeekCostPayload {
-        let data = try await data(
-            path: "/api/v0/usage/by_api_key/cost",
-            token: token,
-            query: usageQuery(start: start, end: end, timezoneSeconds: timezoneSeconds),
-            fixtureEnvironmentKey: "DEEPSEEK_COST_FIXTURE"
-        )
-        let root = try object(data)
-        let business = try businessData(root, endpoint: "cost usage")
-        guard let currencyGroups = business["data"] as? [[String: Any]] else {
-            throw DeepSeekPlatformError.invalidResponse("DeepSeek cost usage changed format.")
-        }
-
-        var totals: [String: Double] = [:]
-        var modelTotals: [String: [String: Double]] = [:]
-        for group in currencyGroups {
-            guard let currency = nonempty(group["currency"]),
-                  let series = group["series"] as? [[String: Any]] else {
-                throw DeepSeekPlatformError.invalidResponse("DeepSeek cost usage changed format.")
-            }
-            for item in series {
-                guard let model = nonempty(item["model"]),
-                      let buckets = item["buckets"] as? [[String: Any]] else {
-                    throw DeepSeekPlatformError.invalidResponse("DeepSeek cost usage changed format.")
-                }
-                for bucket in buckets {
-                    guard let cost = safeDouble(bucket["cost"]) else {
-                        throw DeepSeekPlatformError.invalidResponse("DeepSeek cost usage changed format.")
-                    }
-                    totals[currency, default: 0] += cost
-                    modelTotals[model, default: [:]][currency, default: 0] += cost
-                }
-            }
-        }
-        return DeepSeekCostPayload(
-            totals: money(totals),
-            byModel: modelTotals.mapValues(money)
-        )
-    }
-
-    private func usageQuery(start: Date, end: Date, timezoneSeconds: Int) -> [URLQueryItem] {
-        [
-            URLQueryItem(name: "start", value: String(Int(start.timeIntervalSince1970))),
-            URLQueryItem(name: "end", value: String(Int(end.timeIntervalSince1970))),
-            URLQueryItem(name: "tz", value: String(timezoneSeconds))
-        ]
-    }
-
     private func data(
         path: String,
         token: String,
-        query: [URLQueryItem] = [],
         fixtureEnvironmentKey: String
     ) async throws -> Data {
         if let fixture = ProcessInfo.processInfo.environment[fixtureEnvironmentKey] {
             return try Data(contentsOf: URL(fileURLWithPath: fixture))
         }
-        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        if !query.isEmpty { components.queryItems = query }
-        guard let url = components.url, url.host == "platform.deepseek.com" else {
+        let url = baseURL.appendingPathComponent(path)
+        guard url.host == "platform.deepseek.com" else {
             throw DeepSeekPlatformError.network("DeepSeek endpoint validation failed.")
         }
         var request = URLRequest(url: url)
@@ -216,13 +129,6 @@ struct DeepSeekPlatformClient {
         }.sorted { $0.currency < $1.currency }
     }
 
-    private func money(_ values: [String: Double]) -> [DeepSeekMoney] {
-        values.compactMap { currency, amount in
-            guard amount.isFinite, amount >= 0 else { return nil }
-            return DeepSeekMoney(currency: currency, amount: amount)
-        }.sorted { $0.currency < $1.currency }
-    }
-
     private func nonempty(_ value: Any?) -> String? {
         guard let text = value as? String, !text.isEmpty else { return nil }
         return text
@@ -242,13 +148,6 @@ struct DeepSeekPlatformClient {
         guard let number = safeDouble(value), number.rounded() == number else { return nil }
         return Int(exactly: number)
     }
-
-    private func safeSum(_ values: [Int]) -> Int {
-        values.reduce(into: 0) { result, value in
-            let addition = result.addingReportingOverflow(max(0, value))
-            result = addition.overflow ? Int.max : addition.partialValue
-        }
-    }
 }
 
 enum DeepSeekUsageCollector {
@@ -257,10 +156,10 @@ enum DeepSeekUsageCollector {
         now: Date,
         calendar: Calendar = .current
     ) async -> UsageValue<DeepSeekUsageTotals> {
-        let environmentToken = ProcessInfo.processInfo.environment["DEEPSEEK_PLATFORM_TOKEN"]
-        let isFixtureRun = ProcessInfo.processInfo.environment["DEEPSEEK_SUMMARY_FIXTURE"] != nil
-            && ProcessInfo.processInfo.environment["DEEPSEEK_AMOUNT_FIXTURE"] != nil
-            && ProcessInfo.processInfo.environment["DEEPSEEK_COST_FIXTURE"] != nil
+        let environment = ProcessInfo.processInfo.environment
+        let environmentToken = environment["DEEPSEEK_PLATFORM_TOKEN"]
+        let isFixtureRun = environment["DEEPSEEK_SUMMARY_FIXTURE"] != nil
+            && environment["DEEPSEEK_USAGE_FIXTURE"] != nil
         guard let token = isFixtureRun ? "fixture-session" : (environmentToken ?? DeepSeekCredentialStore.readToken()),
               !token.isEmpty else {
             return CollectorSupport.stale(
@@ -272,72 +171,15 @@ enum DeepSeekUsageCollector {
         }
 
         do {
-            let interval = calendar.dateInterval(of: .month, for: now)
-            let start = interval?.start ?? calendar.startOfDay(for: now)
-            let timezoneSeconds = calendar.timeZone.secondsFromGMT(for: now)
             let client = DeepSeekPlatformClient()
             async let summary = client.fetchSummary(token: token)
-
-            if !isFixtureRun {
-                async let usage = DeepSeekUsageFetcher.fetchUsageSummary(
-                    platformToken: token,
-                    now: now,
-                    calendar: calendar
-                )
-                let (account, detailedUsage) = try await (summary, usage)
-
-                return UsageValue(
-                    status: .ready,
-                    source: .deepSeekPlatform,
-                    measuredAt: now,
-                    lastAttemptAt: now,
-                    message: nil,
-                    value: DeepSeekUsageTotals(
-                        monthTokens: detailedUsage.currentMonthTokens,
-                        monthRequests: detailedUsage.currentMonthRequestCount,
-                        monthCosts: detailedUsage.currentMonthCost.map {
-                            [DeepSeekMoney(currency: detailedUsage.currency, amount: $0)]
-                        } ?? [],
-                        balances: account.balances,
-                        grantedBalances: account.grantedBalances,
-                        totalCosts: account.totalCosts,
-                        models: []
-                    )
-                )
-            }
-
-            async let amount = client.fetchAmount(
+            async let usage = fetchUsage(
                 token: token,
-                start: start,
-                end: now,
-                timezoneSeconds: timezoneSeconds
+                now: now,
+                calendar: calendar,
+                fixture: environment["DEEPSEEK_USAGE_FIXTURE"]
             )
-            async let cost = client.fetchCost(
-                token: token,
-                start: start,
-                end: now,
-                timezoneSeconds: timezoneSeconds
-            )
-            let (resolvedSummary, resolvedAmount, resolvedCost) = try await (summary, amount, cost)
-            let modelCosts = resolvedCost.byModel
-            let models = resolvedAmount.models
-                .map {
-                    DeepSeekModelUsage(
-                        model: $0.name,
-                        tokens: $0.tokens,
-                        requests: $0.requests,
-                        costs: modelCosts[$0.name] ?? []
-                    )
-                }
-                .sorted { $0.tokens > $1.tokens }
-            let monthTokens = models.reduce(0) { result, model in
-                let next = result.addingReportingOverflow(model.tokens)
-                return next.overflow ? Int.max : next.partialValue
-            }
-            let monthRequests = models.reduce(0) { result, model in
-                let next = result.addingReportingOverflow(model.requests)
-                return next.overflow ? Int.max : next.partialValue
-            }
+            let (resolvedSummary, resolvedUsage) = try await (summary, usage)
             return UsageValue(
                 status: .ready,
                 source: .deepSeekPlatform,
@@ -345,13 +187,14 @@ enum DeepSeekUsageCollector {
                 lastAttemptAt: now,
                 message: nil,
                 value: DeepSeekUsageTotals(
-                    monthTokens: monthTokens,
-                    monthRequests: monthRequests,
-                    monthCosts: resolvedCost.totals,
+                    monthTokens: resolvedUsage.monthTokens,
+                    monthRequests: resolvedUsage.monthRequests,
+                    monthCosts: resolvedUsage.monthCost.map {
+                        [DeepSeekMoney(currency: resolvedUsage.currency, amount: $0)]
+                    } ?? [],
                     balances: resolvedSummary.balances,
                     grantedBalances: resolvedSummary.grantedBalances,
-                    totalCosts: resolvedSummary.totalCosts,
-                    models: models
+                    totalCosts: resolvedSummary.totalCosts
                 )
             )
         } catch {
@@ -372,5 +215,39 @@ enum DeepSeekUsageCollector {
                 message: error.localizedDescription
             )
         }
+    }
+
+    private static func fetchUsage(
+        token: String,
+        now: Date,
+        calendar: Calendar,
+        fixture: String?
+    ) async throws -> DeepSeekUsagePayload {
+        if let fixture {
+            do {
+                return try JSONDecoder()
+                    .decode(
+                        DeepSeekUsagePayload.self,
+                        from: Data(contentsOf: URL(fileURLWithPath: fixture))
+                    )
+                    .validated()
+            } catch let error as DeepSeekPlatformError {
+                throw error
+            } catch {
+                throw DeepSeekPlatformError.invalidResponse("DeepSeek usage changed format.")
+            }
+        }
+
+        let usage = try await DeepSeekUsageFetcher.fetchUsageSummary(
+            platformToken: token,
+            now: now,
+            calendar: calendar
+        )
+        return try DeepSeekUsagePayload(
+            monthTokens: usage.currentMonthTokens,
+            monthRequests: usage.currentMonthRequestCount,
+            monthCost: usage.currentMonthCost,
+            currency: usage.currency
+        ).validated()
     }
 }

@@ -9,7 +9,6 @@ enum DeepSeekPanelDensity {
 struct DeepSeekUsagePanel: View {
     let data: UsageValue<DeepSeekUsageTotals>
     let density: DeepSeekPanelDensity
-    var showsModels = false
 
     private let accent = Color(red: 0.22, green: 0.58, blue: 1.00)
     private var usage: DeepSeekUsageTotals? { data.value }
@@ -118,9 +117,6 @@ struct DeepSeekUsagePanel: View {
 
             if density == .expanded {
                 additionalBalances
-                if showsModels, let models = usage?.models, !models.isEmpty {
-                    modelSummary(models)
-                }
             }
         }
     }
@@ -168,24 +164,6 @@ struct DeepSeekUsagePanel: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-    }
-
-    private func modelSummary(_ models: [DeepSeekModelUsage]) -> some View {
-        HStack(spacing: 8) {
-            ForEach(Array(models.prefix(3))) { model in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(model.model)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                    Text("\(UsageFormatting.tokens(model.tokens)) · \(UsageFormatting.moneyList(model.costs))")
-                        .font(.system(size: 8, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.54))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .foregroundStyle(.white.opacity(0.82))
     }
 
     private var compactSummary: String {

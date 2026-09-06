@@ -2,76 +2,31 @@ import Foundation
 import XCTest
 
 final class UsageSnapshotTests: XCTestCase {
-    func testVersionFourSnapshotRoundTrips() throws {
+    func testVersionFiveSnapshotRoundTrips() throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoded = try XCTUnwrap(UsageSnapshot.decode(encoder.encode(UsageSnapshot.preview)))
 
-        XCTAssertEqual(decoded.schemaVersion, 4)
+        XCTAssertEqual(decoded.schemaVersion, 5)
         XCTAssertEqual(decoded.codexTokens.value?.totalTokens, 100_000)
         XCTAssertEqual(decoded.cursorCosts.value?.recentEvents.count, 3)
         XCTAssertNil(decoded.cursorQuota.value?.used)
         XCTAssertEqual(decoded.deepseekUsage.value?.monthTokens, 2_400_000)
     }
 
-    func testV3SnapshotMigratesWithDeepSeekDisconnected() throws {
+    func testLegacySnapshotVersionsAreRejected() throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        let preview = UsageSnapshot.preview
-        let object: [String: Any] = [
-            "schemaVersion": 3,
-            "generatedAt": ISO8601DateFormatter().string(from: preview.generatedAt),
-            "codexTokens": try jsonObject(preview.codexTokens, encoder: encoder),
-            "cursorCosts": try jsonObject(preview.cursorCosts, encoder: encoder),
-            "cursorQuota": try jsonObject(preview.cursorQuota, encoder: encoder),
-            "codexQuota": try jsonObject(preview.codexQuota, encoder: encoder)
-        ]
-        let decoded = try XCTUnwrap(UsageSnapshot.decode(JSONSerialization.data(withJSONObject: object)))
-        XCTAssertEqual(decoded.schemaVersion, 4)
-        XCTAssertEqual(decoded.deepseekUsage.status, .unavailable)
-        XCTAssertEqual(decoded.codexTokens.value?.totalTokens, 100_000)
-    }
+        let data = try encoder.encode(UsageSnapshot.preview)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
 
-    func testV2QuotaSnapshotMigratesWithoutInventingUsage() throws {
-        let data = try XCTUnwrap("""
-        {
-          "schemaVersion": 2,
-          "generatedAt": "2026-08-31T10:00:00Z",
-          "providers": [
-            {
-              "id": "cursor",
-              "measuredAt": "2026-08-31T10:00:00Z",
-              "summaryQuota": {
-                "label": "Monthly usage",
-                "remainingPercent": 57.5,
-                "resetAt": "2026-09-01T00:00:00Z",
-                "windowSeconds": 2678400,
-                "detail": "Example monthly quota"
-              },
-              "windows": []
-            },
-            {
-              "id": "codex",
-              "measuredAt": "2026-08-31T10:00:00Z",
-              "summaryQuota": null,
-              "windows": [{
-                "label": "Week",
-                "remainingPercent": 41,
-                "resetAt": "2026-09-03T00:00:00Z",
-                "windowSeconds": 604800,
-                "detail": null
-              }]
-            }
-          ]
+        for version in 2...4 {
+            object["schemaVersion"] = version
+            let legacyData = try JSONSerialization.data(withJSONObject: object)
+            XCTAssertNil(UsageSnapshot.decode(legacyData), "schema v\(version) should be rejected")
         }
-        """.data(using: .utf8))
-
-        let snapshot = try XCTUnwrap(UsageSnapshot.decode(data))
-        XCTAssertNil(snapshot.codexTokens.value)
-        XCTAssertNil(snapshot.cursorCosts.value)
-        XCTAssertEqual(snapshot.cursorQuota.status, .stale)
-        XCTAssertEqual(snapshot.cursorQuota.source, .cache)
-        XCTAssertEqual(snapshot.codexQuota.value?.remainingPercent, 41)
     }
 
     func testCachedAgeAndStatusAreExplicit() {
@@ -159,16 +114,11 @@ final class UsageSnapshotTests: XCTestCase {
                 monthCosts: [DeepSeekMoney(currency: "USD", amount: 0.5)],
                 balances: [DeepSeekMoney(currency: "USD", amount: 9.5)],
                 grantedBalances: [],
-                totalCosts: [],
-                models: []
+                totalCosts: []
             )
         )
         XCTAssertEqual(value.status, .stale)
         XCTAssertEqual(value.value?.balances.first?.amount, 9.5)
         XCTAssertEqual(UsageFormatting.cacheAge(value.measuredAt, relativeTo: Date(timeIntervalSince1970: 15_400)), "Stale · 4h old")
-    }
-
-    private func jsonObject<T: Encodable>(_ value: T, encoder: JSONEncoder) throws -> Any {
-        try JSONSerialization.jsonObject(with: encoder.encode(value))
     }
 }

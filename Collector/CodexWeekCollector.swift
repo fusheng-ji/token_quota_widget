@@ -49,10 +49,7 @@ struct CodexWeekCollector {
             try SnapshotWriter.write(snapshot, to: outputURL)
             print(outputURL.path)
         } catch {
-            FileHandle.standardError.write(
-                Data("Failed to write snapshot: \(error.localizedDescription)\n".utf8)
-            )
-            exit(1)
+            fail("Failed to write snapshot: \(error.localizedDescription)", status: 1)
         }
     }
 
@@ -62,15 +59,9 @@ struct CodexWeekCollector {
                 print("DeepSeek browser session imported.")
                 exit(0)
             }
-            FileHandle.standardError.write(
-                Data("No signed-in DeepSeek Chromium browser session was found yet.\n".utf8)
-            )
-            exit(3)
+            fail("No signed-in DeepSeek Chromium browser session was found yet.", status: 3)
         } catch {
-            FileHandle.standardError.write(
-                Data("Could not import the DeepSeek browser session: \(error.localizedDescription)\n".utf8)
-            )
-            exit(4)
+            fail("Could not import the DeepSeek browser session: \(error.localizedDescription)", status: 4)
         }
     }
 
@@ -81,22 +72,22 @@ struct CodexWeekCollector {
                   let rawValue = String(data: data, encoding: .utf8),
                   let token = DeepSeekCredentialStore.token(fromLocalStorageValue: rawValue)
             else {
-                FileHandle.standardError.write(Data("The DeepSeek session token was invalid.\n".utf8))
-                exit(4)
+                fail("The DeepSeek session token was invalid.", status: 4)
             }
             try await DeepSeekPlatformClient().validate(token: token)
             try DeepSeekCredentialStore.writeToken(token)
             print("DeepSeek browser session imported.")
             exit(0)
         } catch DeepSeekPlatformError.sessionExpired {
-            FileHandle.standardError.write(Data("The DeepSeek browser session is not signed in yet.\n".utf8))
-            exit(3)
+            fail("The DeepSeek browser session is not signed in yet.", status: 3)
         } catch {
-            FileHandle.standardError.write(
-                Data("Could not import the DeepSeek browser session: \(error.localizedDescription)\n".utf8)
-            )
-            exit(4)
+            fail("Could not import the DeepSeek browser session: \(error.localizedDescription)", status: 4)
         }
+    }
+
+    private static func fail(_ message: String, status: Int32) -> Never {
+        FileHandle.standardError.write(Data("\(message)\n".utf8))
+        exit(status)
     }
 
     private static func resolvedOutputURL() -> URL {

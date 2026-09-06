@@ -41,7 +41,7 @@ struct QuotaWidgetContent: View {
                     panel(.codex, density: .expanded)
                     panel(.cursor, density: .expanded)
                 }
-                deepSeekPanel(density: .expanded, showsModels: true)
+                deepSeekPanel(density: .expanded)
             }
         }
     }
@@ -62,14 +62,10 @@ struct QuotaWidgetContent: View {
         )
     }
 
-    private func deepSeekPanel(
-        density: DeepSeekPanelDensity,
-        showsModels: Bool = false
-    ) -> some View {
+    private func deepSeekPanel(density: DeepSeekPanelDensity) -> some View {
         DeepSeekUsagePanel(
             data: snapshot.deepseekUsage,
-            density: density,
-            showsModels: showsModels
+            density: density
         )
     }
 }

@@ -123,6 +123,7 @@ targets:
       - path: PreviewRenderer
       - path: Shared
       - path: App/UsageStore.swift
+      - path: App/CollectorProcessRunner.swift
       - path: App/UsageMenuView.swift
       - path: App/UsageMenuComponents.swift
       - path: App/DeepSeekSafariSessionReader.swift
