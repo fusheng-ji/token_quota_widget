@@ -4,7 +4,7 @@
 
 <h1 align="center">BeaverMeter</h1>
 
-<p align="center">Codex、Cursor 与 DeepSeek 用量监控</p>
+<p align="center">Usage monitoring for Codex, Cursor, and DeepSeek</p>
 
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 14+"></a>
