@@ -2,9 +2,11 @@
 
 ## CodexBar and SweetCookieKit
 
-This project links `CodexBarCore` and adapts portions of Cursor authentication,
-usage-event decoding, pagination, and boundary reconciliation from
+This project links `CodexBarCore` 0.56.5 from
 [CodexBar](https://github.com/steipete/CodexBar/) commit
+`07f2a670229bca1a34bb7eda5284c89657b8df9a`. Portions of Cursor
+authentication, usage-event decoding, pagination, and boundary reconciliation
+remain adapted from CodexBar commit
 `5d7c1f29fd11ecbf697b3532340f75b25319f811`.
 
 DeepSeek browser-session import uses `ChromiumLocalStorageReader` from

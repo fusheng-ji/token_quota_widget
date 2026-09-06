@@ -2,14 +2,16 @@
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![Swift 5.0 / 6.0](https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&logo=swift&logoColor=white)](https://www.swift.org/)
-[![Version 4.3](https://img.shields.io/badge/version-4.3-4C7CF3?style=flat-square)](https://github.com/fusheng-ji/token_quota_widget)
+[![Version 4.4.0](https://img.shields.io/badge/version-4.4.0-4C7CF3?style=flat-square)](https://github.com/fusheng-ji/token_quota_widget)
 [![MIT License](https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square)](LICENSE)
 
 AI Token Quota Widget is a native macOS menu-bar utility and WidgetKit
 extension that keeps Codex token activity and account quota alongside Cursor
 model-call costs and monthly allowance. The menu-bar popover also reads the
-current month's DeepSeek API tokens, requests, model costs and account balance,
+current month's DeepSeek API tokens, requests, cost and account balance,
 so routine usage checks do not require opening the Dashboard.
+
+See [CHANGELOG.md](CHANGELOG.md) for the problem addressed by every release.
 
 The installed app and Widget use the public name `AI Token Quota`. Internal
 `CodexWeek` target names, bundle IDs, the app path, LaunchAgent label and
@@ -21,8 +23,8 @@ The menu bar shows Codex tokens, Cursor's latest actual charge and DeepSeek's
 wallet balance in one compact line. Its popover adds Codex
 input, cached input, output and reasoning totals; Cursor's daily actual charge;
 and the latest 20 model calls with time, model, optional token count and charge.
-The DeepSeek section emphasizes wallet balance, with current-month cost, tokens,
-requests and an optional per-model breakdown.
+The DeepSeek section emphasizes wallet balance, with current-month cost, tokens
+and requests.
 
 The Widget has no overall title and adapts three provider panels to each family:
 
@@ -85,10 +87,11 @@ are called out explicitly.
 ### Codex tokens
 
 The bundled collector uses
-[CodexBarCore](https://github.com/steipete/CodexBar/) pinned to commit
-[`5d7c1f29fd11ecbf697b3532340f75b25319f811`](https://github.com/steipete/CodexBar/commit/5d7c1f29fd11ecbf697b3532340f75b25319f811).
+[CodexBarCore](https://github.com/steipete/CodexBar/) pinned to the 0.56.5 release
+commit [`07f2a670229bca1a34bb7eda5284c89657b8df9a`](https://github.com/steipete/CodexBar/commit/07f2a670229bca1a34bb7eda5284c89657b8df9a).
 Its local scanner aggregates the current local day across `~/.codex/sessions`,
-including compressed sessions, duplicate events and file boundaries.
+including compressed sessions, duplicate events, file boundaries and the
+newly appended tail of a still-running Codex task.
 
 The displayed total is `input + output`. Cached input is a subset of input and
 reasoning is a subset of output, so those counters are details and are not
@@ -170,6 +173,10 @@ If one source fails, its most recent successful value remains visible as stale
 while the other sources keep updating. Cache older than three hours receives a
 strong warning. Missing live data is never replaced with preview data.
 
+Version 4.4 uses snapshot schema v5. Older snapshots are ignored and replaced
+by the first automatic refresh after upgrade; account credentials and local
+configuration are unaffected.
+
 ## Privacy
 
 - Credentials come from existing local Cursor and Codex sessions and remain in
@@ -242,18 +249,19 @@ CODEX_TOKEN_FIXTURE
 CODEX_USAGE_FIXTURE
 CURSOR_EVENTS_FIXTURE
 CURSOR_SUMMARY_FIXTURE
-DEEPSEEK_AMOUNT_FIXTURE
-DEEPSEEK_COST_FIXTURE
+DEEPSEEK_USAGE_FIXTURE
 DEEPSEEK_SUMMARY_FIXTURE
 CURSOR_STATE_DB
+CODEX_TOKEN_CACHE_ROOT
 ```
 
-Coverage includes schema v4 decoding, v3/v2 migration, percent clamping,
-Codex token subset semantics, single and multiple quota windows, tolerant
-Cursor number decoding, zero-cost events, pagination boundaries, actual-charge
+Coverage includes schema v5 decoding, rejection of v2-v4 caches, percent
+clamping, Codex token subset semantics, live-rollout tail updates, single and
+multiple quota windows, tolerant Cursor number decoding, zero-cost events,
+pagination boundaries, actual-charge
 totals, personal Monthly usage precedence, independent fallback, snapshot
 permissions and privacy. SwiftUI previews cover all four Widget families plus
-ready, stale, signed-out, error, long-value, empty-model and missing-reset states.
+ready, stale, signed-out, error, long-value and missing-reset states.
 
 ## Troubleshooting
 
@@ -277,7 +285,7 @@ ready, stale, signed-out, error, long-value, empty-model and missing-reset state
 - `App/` — application entry, asynchronous state and menu popover components
 - `Collector/` — Codex, Cursor and DeepSeek clients, fallback and snapshot writing
 - `Widget/` — timeline entry, adaptive quota panels and state previews
-- `Shared/` — schema v4, v3/v2 migration, snapshot loading and formatters
+- `Shared/` — schema v5 models, snapshot loading and formatters
 - `Tests/` — Swift tests and network-free collector fixtures
 - `PreviewRenderer/` — deterministic menu and Widget screenshot generator
 - `scripts/` — install, refresh, Widget repair and uninstall helpers

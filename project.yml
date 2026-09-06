@@ -38,8 +38,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek
         PRODUCT_NAME: CodexWeek
-        CURRENT_PROJECT_VERSION: 21
-        MARKETING_VERSION: 4.3
+        CURRENT_PROJECT_VERSION: 22
+        MARKETING_VERSION: 4.4.0
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: AI Token Quota
         INFOPLIST_KEY_NSAppleEventsUsageDescription: AI Token Quota reads only the DeepSeek session from the official Safari tab you opened.
@@ -100,8 +100,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${CODEXWEEK_BUNDLE_PREFIX}.codexweek.widget
         PRODUCT_NAME: CodexWeekWidgetExtension
-        CURRENT_PROJECT_VERSION: 21
-        MARKETING_VERSION: 4.3
+        CURRENT_PROJECT_VERSION: 22
+        MARKETING_VERSION: 4.4.0
         SKIP_INSTALL: YES
         ENABLE_APP_SANDBOX: YES
         CODE_SIGN_ENTITLEMENTS: Widget/CodexWeekWidget.entitlements
