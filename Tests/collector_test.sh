@@ -55,6 +55,48 @@ if rg -q 'accessToken|access_token|WorkosCursorSessionToken|owningUser|owningTea
   exit 1
 fi
 
+# A live Codex rollout keeps growing while a task is active. Verify that a
+# second refresh consumes the newly appended token-count tail instead of
+# returning the cached prefix forever.
+today_path="$(date '+%Y/%m/%d')"
+timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+codex_home="$test_dir/codex-home"
+token_cache="$test_dir/codex-token-cache"
+session_dir="$codex_home/sessions/$today_path"
+session_file="$session_dir/rollout-live-growth.jsonl"
+mkdir -p "$session_dir"
+print -rl -- \
+  "{\"type\":\"session_meta\",\"timestamp\":\"$timestamp\",\"payload\":{\"id\":\"live-growth\",\"session_id\":\"live-growth\",\"timestamp\":\"$timestamp\"}}" \
+  "{\"type\":\"turn_context\",\"timestamp\":\"$timestamp\",\"payload\":{\"model\":\"openai/gpt-5.4\"}}" \
+  "{\"type\":\"event_msg\",\"timestamp\":\"$timestamp\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10},\"total_token_usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10}}}}" \
+  > "$session_file"
+
+CODEX_HOME="$codex_home" \
+CODEX_TOKEN_CACHE_ROOT="$token_cache" \
+CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount.json" \
+DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+  "$collector" --output "$snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 110' "$snapshot" >/dev/null
+
+print -r -- \
+  "{\"type\":\"event_msg\",\"timestamp\":\"$timestamp\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":75,\"cached_input_tokens\":10,\"output_tokens\":15},\"total_token_usage\":{\"input_tokens\":175,\"cached_input_tokens\":30,\"output_tokens\":25}}}}" \
+  >> "$session_file"
+
+CODEX_HOME="$codex_home" \
+CODEX_TOKEN_CACHE_ROOT="$token_cache" \
+CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+DEEPSEEK_AMOUNT_FIXTURE="$fixtures/deepseek-amount.json" \
+DEEPSEEK_COST_FIXTURE="$fixtures/deepseek-cost.json" \
+  "$collector" --output "$snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 200' "$snapshot" >/dev/null
+
 CURSOR_STATE_DB="$test_dir/missing-cursor.vscdb" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \

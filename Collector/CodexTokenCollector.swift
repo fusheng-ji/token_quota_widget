@@ -7,7 +7,8 @@ enum CodexTokenCollector {
         now: Date
     ) async -> UsageValue<CodexTokenTotals> {
         do {
-            if let fixture = ProcessInfo.processInfo.environment["CODEX_TOKEN_FIXTURE"] {
+            let environment = ProcessInfo.processInfo.environment
+            if let fixture = environment["CODEX_TOKEN_FIXTURE"] {
                 let decoder = JSONDecoder()
                 let value = try decoder.decode(
                     CodexTokenTotals.self,
@@ -23,8 +24,13 @@ enum CodexTokenCollector {
                 )
             }
 
-            let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
-            let snapshot = try await CostUsageFetcher(calendar: .current).loadTokenSnapshot(
+            let codexHome = environment["CODEX_HOME"]
+            let cacheRoot = environment["CODEX_TOKEN_CACHE_ROOT"]
+                .map { URL(fileURLWithPath: $0) }
+            let snapshot = try await CostUsageFetcher(
+                cacheRoot: cacheRoot,
+                calendar: .current
+            ).loadTokenSnapshot(
                 provider: .codex,
                 now: now,
                 forceRefresh: true,
