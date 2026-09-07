@@ -94,6 +94,59 @@ DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
   "$collector" --output "$snapshot" >/dev/null
 jq -e '.codexTokens.value.totalTokens == 200' "$snapshot" >/dev/null
 
+# Codex Desktop can keep appending to a rollout under the task's original date
+# directory after midnight. Its new token_usage_record entries are authoritative
+# per-response deltas and must be counted even when CodexBar cannot materialize
+# the accompanying legacy token_count events into today's report.
+cross_day_home="$test_dir/cross-day-codex-home"
+cross_day_cache="$test_dir/cross-day-token-cache"
+yesterday_path="$(date -v-1d '+%Y/%m/%d')"
+cross_day_dir="$cross_day_home/sessions/$yesterday_path"
+cross_day_file="$cross_day_dir/rollout-cross-day.jsonl"
+mkdir -p "$cross_day_dir"
+print -rl -- \
+  "{\"type\":\"session_meta\",\"timestamp\":\"$timestamp\",\"payload\":{\"id\":\"cross-day\",\"session_id\":\"cross-day\",\"timestamp\":\"$timestamp\"}}" \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"response-one\",\"session_id\":\"cross-day\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10,\"reasoning_output_tokens\":3,\"total_tokens\":110}}}" \
+  > "$cross_day_file"
+
+CODEX_HOME="$cross_day_home" \
+CODEX_TOKEN_CACHE_ROOT="$cross_day_cache" \
+CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
+  "$collector" --output "$snapshot" >/dev/null
+jq -e '
+  .codexTokens.status == "ready" and
+  .codexTokens.value.totalTokens == 110 and
+  .codexTokens.value.inputTokens == 100 and
+  .codexTokens.value.cachedInputTokens == 20 and
+  .codexTokens.value.outputTokens == 10 and
+  .codexTokens.value.reasoningTokens == 3 and
+  .codexTokens.value.sessionCount == 1
+' "$snapshot" >/dev/null
+
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"response-two\",\"session_id\":\"cross-day\",\"usage\":{\"input_tokens\":75,\"cached_input_tokens\":10,\"output_tokens\":15,\"reasoning_output_tokens\":2,\"total_tokens\":90}}}" \
+  >> "$cross_day_file"
+
+CODEX_HOME="$cross_day_home" \
+CODEX_TOKEN_CACHE_ROOT="$cross_day_cache" \
+CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
+  "$collector" --output "$snapshot" >/dev/null
+jq -e '
+  .codexTokens.value.totalTokens == 200 and
+  .codexTokens.value.inputTokens == 175 and
+  .codexTokens.value.cachedInputTokens == 30 and
+  .codexTokens.value.outputTokens == 25 and
+  .codexTokens.value.reasoningTokens == 5
+' "$snapshot" >/dev/null
+
 CURSOR_STATE_DB="$test_dir/missing-cursor.vscdb" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \

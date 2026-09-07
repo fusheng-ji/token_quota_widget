@@ -4,6 +4,17 @@ This file records the user problem addressed by each verifiable release in the
 repository. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] - 2026-09-07
+
+### Fixed
+
+- Problem: today's Codex token total could remain at zero for a long-running
+  Codex Desktop task when its rollout continued growing inside an older date
+  directory after midnight.
+- Resolution: scan recently modified rollouts for Codex Desktop's per-response
+  `token_usage_record` entries, deduplicate responses, and retain the existing
+  CodexBar scan as the fallback for older session formats.
+
 ## [5.0.0] - 2026-09-06
 
 ### Added
@@ -80,6 +91,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added recent Cursor call details, local Codex session aggregation, independent
   stale-data fallback, deterministic previews and network-free fixtures.
 
+[5.0.1]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.4.0...v5.0.0
 [4.4.0]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.3...v4.4.0
 [4.3]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.0...v4.3
