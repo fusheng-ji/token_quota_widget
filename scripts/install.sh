@@ -20,6 +20,18 @@ legacy_log_dir="$user_root/Library/Logs/CodexWeek"
 migration_script="$project_dir/scripts/migrate_beavermeter_data.sh"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
 
+unregister_other_beavermeter_apps() {
+  local registered_app
+  "$lsregister" -dump 2>/dev/null \
+    | sed -En 's/^[[:space:]]*path:[[:space:]]*(.*BeaverMeter\.app)[[:space:]]+\(0x[0-9A-Fa-f]+\)$/\1/p' \
+    | while IFS= read -r registered_app; do
+        if [[ "$registered_app" != "$installed_app" ]]; then
+          pluginkit -r "$registered_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
+          "$lsregister" -u "$registered_app" >/dev/null 2>&1 || true
+        fi
+      done
+}
+
 for command_name in xcodegen sqlite3; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     print -u2 "Missing dependency: $command_name"
@@ -188,9 +200,11 @@ installed_widget="$installed_app/Contents/PlugIns/BeaverMeterWidgetExtension.app
 if [[ -d "$legacy_widget" ]]; then
   pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
 fi
+unregister_other_beavermeter_apps
 pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
 "$lsregister" -f -R -trusted "$installed_app"
 pluginkit -a "$installed_widget"
+"$lsregister" -gc >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$agent_path"
 "$installed_app/Contents/Resources/collect_beaver_meter.sh" "$snapshot_path" >/dev/null
 
@@ -201,6 +215,11 @@ if [[ "$schema_version" != "5" ]]; then
 fi
 codesign --verify --deep --strict "$installed_app"
 launchctl kickstart -k "gui/$(id -u)/$agent_label"
+# WidgetKit can retain timelines archived against the previous bundle build.
+# Restart its user agents after the new extension is registered so the app's
+# launch below requests a timeline against the newly installed bundle stub.
+killall chronod >/dev/null 2>&1 || true
+killall NotificationCenter >/dev/null 2>&1 || true
 open "$installed_app"
 install_committed=1
 
