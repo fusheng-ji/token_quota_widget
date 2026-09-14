@@ -4,6 +4,17 @@ This file records the user problem addressed by each verifiable release in the
 repository. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.3] - 2026-09-11
+
+### Fixed
+
+- Problem: the LaunchAgent could write a newer Codex token total while the
+  closed menu-bar popover kept the app's refresh timer inactive, leaving the
+  desktop Widget on its previous timeline.
+- Resolution: observe the shared snapshot for the lifetime of the menu-bar app,
+  adopt newer schema v5 snapshots even while the popover is closed, and request
+  a WidgetKit timeline reload only when the snapshot timestamp advances.
+
 ## [5.0.2] - 2026-09-08
 
 ### Fixed
@@ -102,6 +113,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added recent Cursor call details, local Codex session aggregation, independent
   stale-data fallback, deterministic previews and network-free fixtures.
 
+[5.0.3]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.2...v5.0.3
 [5.0.2]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.1...v5.0.2
 [5.0.1]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/fusheng-ji/token_quota_widget/compare/v4.4.0...v5.0.0

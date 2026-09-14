@@ -277,7 +277,7 @@ struct UsageMenuView: View {
 
 #Preview("Menu popover") {
     UsageMenuView(
-        store: UsageStore(snapshot: .preview),
+        store: UsageStore(snapshot: .preview, observesSnapshotChanges: false),
         automaticRefresh: false,
         scrollsContent: false,
         updatedDescriptionOverride: "from demo data"

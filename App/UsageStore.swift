@@ -39,10 +39,33 @@ final class UsageStore: ObservableObject {
 
     private var lastAutomaticRefresh: Date?
     private var deepSeekConnectionTask: Task<Void, Never>?
+    private var snapshotObservationTask: Task<Void, Never>?
     private var refreshQueued = false
 
-    init(snapshot: UsageSnapshot = .load()) {
+    init(snapshot: UsageSnapshot = .load(), observesSnapshotChanges: Bool = true) {
         self.snapshot = snapshot
+        if observesSnapshotChanges {
+            snapshotObservationTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .seconds(15))
+                    } catch {
+                        return
+                    }
+                    self?.adoptNewerSnapshotFromDisk()
+                }
+            }
+        }
+    }
+
+    private func adoptNewerSnapshotFromDisk() {
+        guard let data = try? Data(contentsOf: UsageSnapshot.snapshotURL),
+              let latest = UsageSnapshot.decode(data),
+              latest.generatedAt > snapshot.generatedAt
+        else { return }
+
+        snapshot = latest
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     var menuBarText: String {
