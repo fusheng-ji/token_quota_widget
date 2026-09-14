@@ -24,21 +24,29 @@ if [[ ! -d "$installed_app" ]]; then
   exit 1
 fi
 
+for process_name in BeaverMeter BeaverMeterWidgetExtension; do
+  pkill -x "$process_name" >/dev/null 2>&1 || true
+done
+for process_name in BeaverMeter BeaverMeterWidgetExtension; do
+  for _ in {1..20}; do
+    pgrep -x "$process_name" >/dev/null 2>&1 || break
+    sleep 0.1
+  done
+  if pgrep -x "$process_name" >/dev/null 2>&1; then
+    print -u2 "Could not stop $process_name while repairing WidgetKit."
+    exit 1
+  fi
+done
+
 # Removing this bundle ID first also clears stale Xcode DerivedData copies that
 # otherwise appear as duplicate entries in the macOS Widget gallery.
 if [[ -d "$legacy_widget" ]]; then
   pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
 fi
 unregister_other_beavermeter_apps
-pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
 "$lsregister" -f -R -trusted "$installed_app"
 pluginkit -a "$installed_widget"
 "$lsregister" -gc >/dev/null 2>&1 || true
-pkill -x BeaverMeter >/dev/null 2>&1 || true
-for _ in {1..20}; do
-  pgrep -x BeaverMeter >/dev/null 2>&1 || break
-  sleep 0.1
-done
 killall chronod >/dev/null 2>&1 || true
 killall NotificationCenter >/dev/null 2>&1 || true
 launched=0

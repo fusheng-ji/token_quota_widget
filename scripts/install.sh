@@ -113,7 +113,11 @@ install_committed=0
 
 cleanup() {
   local exit_code=$?
-  if [[ -d "$built_app" ]]; then
+  # On a successful install, unregister_other_beavermeter_apps has already
+  # removed the DerivedData copy before the installed bundle is registered.
+  # Removing that same bundle ID again here makes WidgetKit invalidate the
+  # freshly registered extension and can leave its desktop timeline broken.
+  if (( install_committed == 0 )) && [[ -d "$built_app" ]]; then
     "$lsregister" -u "$built_app" >/dev/null 2>&1 || true
     pluginkit -r "$built_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
   fi
@@ -152,10 +156,10 @@ DEVELOPER_DIR="$developer_dir" xcodebuild \
 
 launchctl bootout "gui/$(id -u)/$agent_label" >/dev/null 2>&1 || true
 launchctl bootout "gui/$(id -u)/$legacy_agent_label" >/dev/null 2>&1 || true
-for process_name in BeaverMeter CodexWeek; do
+for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWidgetExtension; do
   pkill -x "$process_name" >/dev/null 2>&1 || true
 done
-for process_name in BeaverMeter CodexWeek; do
+for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWidgetExtension; do
   for _ in {1..20}; do
     pgrep -x "$process_name" >/dev/null 2>&1 || break
     sleep 0.1
@@ -201,7 +205,6 @@ if [[ -d "$legacy_widget" ]]; then
   pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
 fi
 unregister_other_beavermeter_apps
-pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
 "$lsregister" -f -R -trusted "$installed_app"
 pluginkit -a "$installed_widget"
 "$lsregister" -gc >/dev/null 2>&1 || true
@@ -215,9 +218,9 @@ if [[ "$schema_version" != "5" ]]; then
 fi
 codesign --verify --deep --strict "$installed_app"
 launchctl kickstart -k "gui/$(id -u)/$agent_label"
-# WidgetKit can retain timelines archived against the previous bundle build.
-# Restart its user agents after the new extension is registered so the app's
-# launch below requests a timeline against the newly installed bundle stub.
+# WidgetKit can retain timelines and extension processes from the previous
+# bundle build. The extension is stopped before replacement above; restart its
+# user agents here after registering the new bundle stub.
 killall chronod >/dev/null 2>&1 || true
 killall NotificationCenter >/dev/null 2>&1 || true
 open "$installed_app"

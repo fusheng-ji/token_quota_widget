@@ -4,6 +4,19 @@ This file records the user problem addressed by each verifiable release in the
 repository. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Problem: after replacing the app bundle, a Widget extension process from the
+  previous build could remain alive while cleanup unregistered a DerivedData
+  copy with the same bundle ID. WidgetKit then rejected every new timeline with
+  a bundle-version mismatch.
+- Resolution: stop and verify the App and Widget extension processes before
+  replacement, register the installed extension only after removing other app
+  copies, and avoid unregistering the build copy again after a successful
+  installation. Widget repair now follows the same process-safe ordering.
+
 ## [5.0.4] - 2026-09-14
 
 ### Fixed
@@ -124,6 +137,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added recent Cursor call details, local Codex session aggregation, independent
   stale-data fallback, deterministic previews and network-free fixtures.
 
+[Unreleased]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.4...HEAD
 [5.0.4]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.3...v5.0.4
 [5.0.3]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.2...v5.0.3
 [5.0.2]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.1...v5.0.2
