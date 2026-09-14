@@ -4,6 +4,17 @@ This file records the user problem addressed by each verifiable release in the
 repository. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.4] - 2026-09-14
+
+### Fixed
+
+- Problem: the first completed Codex response of a day could remain at zero in
+  the Widget until the next five-minute full-provider refresh.
+- Resolution: run a local-only Codex refresh every 45 seconds while BeaverMeter
+  is open, scan only newly appended rollout bytes, serialize concurrent
+  collectors, and reload WidgetKit without increasing Cursor, DeepSeek or quota
+  network traffic.
+
 ## [5.0.3] - 2026-09-11
 
 ### Fixed
@@ -113,6 +124,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added recent Cursor call details, local Codex session aggregation, independent
   stale-data fallback, deterministic previews and network-free fixtures.
 
+[5.0.4]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.3...v5.0.4
 [5.0.3]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.2...v5.0.3
 [5.0.2]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.1...v5.0.2
 [5.0.1]: https://github.com/fusheng-ji/token_quota_widget/compare/v5.0.0...v5.0.1

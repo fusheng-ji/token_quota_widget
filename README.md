@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 14+"></a>
   <a href="https://www.swift.org/"><img src="https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5.0 / 6.0"></a>
-  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.0.3-4C7CF3?style=flat-square" alt="Version 5.0.3"></a>
+  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.0.4-4C7CF3?style=flat-square" alt="Version 5.0.4"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square" alt="MIT License"></a>
 </p>
 
