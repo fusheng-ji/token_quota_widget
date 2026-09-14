@@ -14,10 +14,29 @@ struct BeaverMeterCollector {
         }
 
         let outputURL = resolvedOutputURL()
+        do {
+            let lock = try SnapshotWriter.lock(for: outputURL)
+            defer { lock.unlock() }
+            if CommandLine.arguments.contains("--codex-only") {
+                try await refreshCodexOnly(outputURL: outputURL)
+            } else {
+                try await refreshAll(outputURL: outputURL)
+            }
+        } catch {
+            fail("Failed to refresh usage: \(error.localizedDescription)", status: 1)
+        }
+    }
+
+    private static func refreshAll(outputURL: URL) async throws {
         let previous = SnapshotWriter.loadPrevious(from: outputURL)
         let now = Date()
+        let scanCacheURL = codexScanCacheURL(for: outputURL)
 
-        async let codexTokens = CodexTokenCollector.collect(previous: previous.codexTokens, now: now)
+        async let codexTokens = CodexTokenCollector.collect(
+            previous: previous.codexTokens,
+            now: now,
+            scanCacheURL: scanCacheURL
+        )
         async let codexQuota = CodexQuotaCollector.collect(previous: previous.codexQuota, now: now)
         async let cursor = CursorUsageCollector.collect(
             previousCosts: previous.cursorCosts,
@@ -45,12 +64,81 @@ struct BeaverMeterCollector {
             deepseekUsage: resolvedDeepSeek
         )
 
-        do {
-            try SnapshotWriter.write(snapshot, to: outputURL)
+        try SnapshotWriter.write(snapshot, to: outputURL)
+        print(outputURL.path)
+    }
+
+    private static func refreshCodexOnly(outputURL: URL) async throws {
+        let previous = SnapshotWriter.loadPrevious(from: outputURL)
+        let now = Date()
+        let environment = ProcessInfo.processInfo.environment
+        let result = try CodexUsageRecordScanner.collect(
+            codexHomePath: environment["CODEX_HOME"],
+            now: now,
+            calendar: .current,
+            cacheURL: codexScanCacheURL(for: outputURL)
+        )
+        guard result.changed else {
             print(outputURL.path)
-        } catch {
-            fail("Failed to write snapshot: \(error.localizedDescription)", status: 1)
+            return
         }
+
+        let previousWasMeasuredToday = previous.codexTokens.measuredAt.map {
+            Calendar.current.isDate($0, inSameDayAs: now)
+        } ?? false
+        let totals: CodexTokenTotals
+        if let collectedTotals = result.totals {
+            if previousWasMeasuredToday,
+               let previousTotals = previous.codexTokens.value,
+               collectedTotals.totalTokens < previousTotals.totalTokens
+            {
+                print(outputURL.path)
+                return
+            }
+            totals = collectedTotals
+        } else {
+            if previousWasMeasuredToday, previous.codexTokens.value != nil {
+                print(outputURL.path)
+                return
+            }
+            totals = CodexTokenTotals(
+                totalTokens: 0,
+                inputTokens: 0,
+                cachedInputTokens: 0,
+                outputTokens: 0,
+                reasoningTokens: 0,
+                sessionCount: 0
+            )
+        }
+        guard previous.codexTokens.status != .ready || previous.codexTokens.value != totals else {
+            print(outputURL.path)
+            return
+        }
+
+        let codexTokens = UsageValue(
+            status: UsageDataStatus.ready,
+            source: UsageDataSource.codexBarLocal,
+            measuredAt: now,
+            lastAttemptAt: now,
+            message: nil,
+            value: totals
+        )
+        let snapshot = UsageSnapshot(
+            schemaVersion: UsageSnapshot.currentSchemaVersion,
+            generatedAt: now,
+            codexTokens: codexTokens,
+            cursorCosts: previous.cursorCosts,
+            cursorQuota: previous.cursorQuota,
+            codexQuota: previous.codexQuota,
+            deepseekUsage: previous.deepseekUsage
+        )
+        try SnapshotWriter.write(snapshot, to: outputURL)
+        print(outputURL.path)
+    }
+
+    private static func codexScanCacheURL(for outputURL: URL) -> URL {
+        outputURL.deletingLastPathComponent()
+            .appendingPathComponent("beaver-meter-codex-scan-v1.json")
     }
 
     private static func importDeepSeekBrowserSession() async {

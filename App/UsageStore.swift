@@ -40,6 +40,8 @@ final class UsageStore: ObservableObject {
     private var lastAutomaticRefresh: Date?
     private var deepSeekConnectionTask: Task<Void, Never>?
     private var snapshotObservationTask: Task<Void, Never>?
+    private var codexActivityRefreshTask: Task<Void, Never>?
+    private var isCodexActivityRefreshing = false
     private var refreshQueued = false
 
     init(snapshot: UsageSnapshot = .load(), observesSnapshotChanges: Bool = true) {
@@ -53,6 +55,16 @@ final class UsageStore: ObservableObject {
                         return
                     }
                     self?.adoptNewerSnapshotFromDisk()
+                }
+            }
+            codexActivityRefreshTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .seconds(45))
+                    } catch {
+                        return
+                    }
+                    await self?.refreshCodexActivity()
                 }
             }
         }
@@ -109,7 +121,7 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh() {
-        guard !isRefreshing else {
+        guard !isRefreshing, !isCodexActivityRefreshing else {
             refreshQueued = true
             return
         }
@@ -118,7 +130,7 @@ final class UsageStore: ObservableObject {
         lastAutomaticRefresh = .now
 
         let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
-        let script = Bundle.main.url(forResource: "collect_codex_week", withExtension: "sh")
+        let script = Bundle.main.url(forResource: "collect_beaver_meter", withExtension: "sh")
         let output = UsageSnapshot.snapshotURL.path
 
         Task {
@@ -158,6 +170,29 @@ final class UsageStore: ObservableObject {
                 refreshQueued = false
                 refresh()
             }
+        }
+    }
+
+    private func refreshCodexActivity() async {
+        guard !isRefreshing, !isCodexActivityRefreshing else { return }
+        isCodexActivityRefreshing = true
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
+        let script = Bundle.main.url(forResource: "collect_beaver_meter", withExtension: "sh")
+        let output = UsageSnapshot.snapshotURL.path
+        let result = await Task.detached(priority: .utility) {
+            CollectorProcessRunner.refreshCodexTokens(
+                helper: helper,
+                script: script,
+                output: output
+            )
+        }.value
+        isCodexActivityRefreshing = false
+        if result.status == 0 {
+            adoptNewerSnapshotFromDisk()
+        }
+        if refreshQueued {
+            refreshQueued = false
+            refresh()
         }
     }
 

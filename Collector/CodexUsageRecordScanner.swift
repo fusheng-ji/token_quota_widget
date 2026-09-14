@@ -1,11 +1,18 @@
+import CryptoKit
+import Darwin
 import Foundation
 
 /// Reads the per-response usage records emitted by recent Codex Desktop builds.
-/// CodexBar currently reads the accompanying legacy `token_count` events; these
-/// records provide a reliable fallback when a long-running task crosses a day
-/// boundary and the legacy events are not materialized into the daily report.
+/// The private scan cache stores only hashes and byte offsets, so frequent live
+/// refreshes consume appended JSONL tails instead of rereading whole rollouts.
 enum CodexUsageRecordScanner {
+    struct Result {
+        let totals: CodexTokenTotals?
+        let changed: Bool
+    }
+
     private static let activeSessionLookbackDays = 30
+    private static let cacheSchemaVersion = 1
     private static let recordMarker = Data(#""token_usage_record""#.utf8)
 
     private struct Record: Decodable {
@@ -40,12 +47,49 @@ enum CodexUsageRecordScanner {
         }
     }
 
+    private struct ScanCache: Codable {
+        let schemaVersion: Int
+        let dayStart: Date
+        let codexHomeHash: String
+        var files: [String: FileState]
+    }
+
+    private struct FileState: Codable {
+        var offset: Int
+        var inputTokens: Int
+        var cachedInputTokens: Int
+        var outputTokens: Int
+        var reasoningTokens: Int
+        var responseHashes: Set<String>
+        var sessionHashes: Set<String>
+        var recordCount: Int
+
+        static let empty = FileState(
+            offset: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+            responseHashes: [],
+            sessionHashes: [],
+            recordCount: 0
+        )
+    }
+
+    private struct Candidate {
+        let url: URL
+        let identity: String
+        let size: Int
+    }
+
     static func collect(
         codexHomePath: String?,
         now: Date,
-        calendar: Calendar = .current
-    ) throws -> CodexTokenTotals? {
+        calendar: Calendar = .current,
+        cacheURL: URL? = nil
+    ) throws -> Result {
         let codexHome = resolvedCodexHome(codexHomePath)
+        let codexHomeHash = hash(codexHome.standardizedFileURL.path)
         let dayStart = calendar.startOfDay(for: now)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
             throw CocoaError(.coderReadCorrupt)
@@ -56,24 +100,64 @@ enum CodexUsageRecordScanner {
             dayStart: dayStart,
             calendar: calendar
         )
-        guard !candidates.isEmpty else { return nil }
+        let loadedCache = cacheURL.flatMap(loadCache)
+        let cacheIsCurrent = loadedCache?.schemaVersion == cacheSchemaVersion
+            && loadedCache?.dayStart == dayStart
+            && loadedCache?.codexHomeHash == codexHomeHash
+        var cache = if cacheIsCurrent, let loadedCache {
+            loadedCache
+        } else {
+            ScanCache(
+                schemaVersion: cacheSchemaVersion,
+                dayStart: dayStart,
+                codexHomeHash: codexHomeHash,
+                files: [:]
+            )
+        }
+        var resetCache = !cacheIsCurrent
+
+        if !resetCache {
+            for candidate in candidates {
+                if let state = cache.files[candidate.identity], candidate.size < state.offset {
+                    resetCache = true
+                    break
+                }
+            }
+        }
+        if resetCache {
+            cache = ScanCache(
+                schemaVersion: cacheSchemaVersion,
+                dayStart: dayStart,
+                codexHomeHash: codexHomeHash,
+                files: [:]
+            )
+        }
 
         let fractionalFormatter = ISO8601DateFormatter()
         fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let standardFormatter = ISO8601DateFormatter()
         standardFormatter.formatOptions = [.withInternetDateTime]
 
-        var inputTokens = 0
-        var cachedInputTokens = 0
-        var outputTokens = 0
-        var reasoningTokens = 0
-        var responseIDs: Set<String> = []
-        var sessionIDs: Set<String> = []
-        var recordCount = 0
+        var knownResponses = Set(cache.files.values.flatMap(\.responseHashes))
+        var addedRecords = 0
 
-        for fileURL in candidates {
-            let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
-            try forEachUsageRecord(in: data) { record in
+        for candidate in candidates {
+            var state = cache.files[candidate.identity] ?? .empty
+            guard candidate.size > state.offset else { continue }
+
+            let appendedData: Data
+            do {
+                let handle = try FileHandle(forReadingFrom: candidate.url)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: UInt64(state.offset))
+                appendedData = try handle.readToEnd() ?? Data()
+            }
+            guard let finalNewline = appendedData.lastIndex(of: 0x0A) else { continue }
+            let completeEnd = appendedData.index(after: finalNewline)
+            let completeData = appendedData[..<completeEnd]
+            let baseOffset = state.offset
+
+            try forEachUsageRecord(in: completeData) { record, lineOffset in
                 guard record.type == "token_usage_record",
                       let timestamp = fractionalFormatter.date(from: record.timestamp)
                         ?? standardFormatter.date(from: record.timestamp),
@@ -89,28 +173,63 @@ enum CodexUsageRecordScanner {
                       (usage.reasoningOutputTokens ?? 0) >= 0
                 else { return }
 
-                let identity = record.payload.responseID
-                    ?? "\(fileURL.path):\(record.timestamp):\(recordCount)"
-                guard responseIDs.insert(identity).inserted else { return }
+                let responseIdentity = record.payload.responseID
+                    ?? "\(candidate.identity):\(baseOffset + lineOffset):\(record.timestamp)"
+                let responseHash = hash(responseIdentity)
+                guard knownResponses.insert(responseHash).inserted else { return }
 
-                inputTokens = try adding(inputTokens, usage.inputTokens)
-                cachedInputTokens = try adding(cachedInputTokens, usage.cachedInputTokens ?? 0)
-                outputTokens = try adding(outputTokens, usage.outputTokens)
-                reasoningTokens = try adding(reasoningTokens, usage.reasoningOutputTokens ?? 0)
-                sessionIDs.insert(record.payload.sessionID ?? fileURL.path)
-                recordCount += 1
+                state.inputTokens = try adding(state.inputTokens, usage.inputTokens)
+                state.cachedInputTokens = try adding(
+                    state.cachedInputTokens,
+                    usage.cachedInputTokens ?? 0
+                )
+                state.outputTokens = try adding(state.outputTokens, usage.outputTokens)
+                state.reasoningTokens = try adding(
+                    state.reasoningTokens,
+                    usage.reasoningOutputTokens ?? 0
+                )
+                state.responseHashes.insert(responseHash)
+                state.sessionHashes.insert(hash(record.payload.sessionID ?? candidate.identity))
+                state.recordCount += 1
+                addedRecords += 1
             }
+
+            state.offset = try adding(state.offset, completeData.count)
+            cache.files[candidate.identity] = state
         }
 
-        guard recordCount > 0 else { return nil }
-        return CodexTokenTotals(
-            totalTokens: try adding(inputTokens, outputTokens),
-            inputTokens: inputTokens,
-            cachedInputTokens: cachedInputTokens,
-            outputTokens: outputTokens,
-            reasoningTokens: reasoningTokens,
-            sessionCount: sessionIDs.count
-        )
+        if let cacheURL {
+            try? writeCache(cache, to: cacheURL)
+        }
+
+        var inputTokens = 0
+        var cachedInputTokens = 0
+        var outputTokens = 0
+        var reasoningTokens = 0
+        var recordCount = 0
+        var sessionHashes: Set<String> = []
+        for state in cache.files.values {
+            inputTokens = try adding(inputTokens, state.inputTokens)
+            cachedInputTokens = try adding(cachedInputTokens, state.cachedInputTokens)
+            outputTokens = try adding(outputTokens, state.outputTokens)
+            reasoningTokens = try adding(reasoningTokens, state.reasoningTokens)
+            recordCount = try adding(recordCount, state.recordCount)
+            sessionHashes.formUnion(state.sessionHashes)
+        }
+
+        let totals: CodexTokenTotals? = if recordCount > 0 {
+            CodexTokenTotals(
+                totalTokens: try adding(inputTokens, outputTokens),
+                inputTokens: inputTokens,
+                cachedInputTokens: cachedInputTokens,
+                outputTokens: outputTokens,
+                reasoningTokens: reasoningTokens,
+                sessionCount: sessionHashes.count
+            )
+        } else {
+            nil
+        }
+        return Result(totals: totals, changed: resetCache || addedRecords > 0)
     }
 
     private static func resolvedCodexHome(_ configuredPath: String?) -> URL {
@@ -127,13 +246,13 @@ enum CodexUsageRecordScanner {
         codexHome: URL,
         dayStart: Date,
         calendar: Calendar
-    ) -> [URL] {
+    ) -> [Candidate] {
         let sessionsRoot = codexHome.appendingPathComponent("sessions", isDirectory: true)
-        var candidates: [URL] = []
-        var seenPaths: Set<String> = []
+        var candidates: [Candidate] = []
+        var seenIdentities: Set<String> = []
 
         func appendJSONLFiles(in directory: URL, recursively: Bool = false) {
-            let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
+            let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
             let fileURLs: [URL]
             if recursively {
                 guard let enumerator = FileManager.default.enumerator(
@@ -154,11 +273,13 @@ enum CodexUsageRecordScanner {
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
                 guard values?.isRegularFile == true,
                       let modifiedAt = values?.contentModificationDate,
-                      modifiedAt >= dayStart
+                      modifiedAt >= dayStart,
+                      let fileSize = values?.fileSize,
+                      fileSize >= 0,
+                      let identity = fileIdentity(fileURL),
+                      seenIdentities.insert(identity).inserted
                 else { continue }
-                let path = fileURL.standardizedFileURL.path
-                guard seenPaths.insert(path).inserted else { continue }
-                candidates.append(fileURL)
+                candidates.append(Candidate(url: fileURL, identity: identity, size: fileSize))
             }
         }
 
@@ -178,12 +299,18 @@ enum CodexUsageRecordScanner {
             in: codexHome.appendingPathComponent("archived_sessions", isDirectory: true),
             recursively: true
         )
-        return candidates.sorted { $0.path < $1.path }
+        return candidates.sorted { $0.identity < $1.identity }
+    }
+
+    private static func fileIdentity(_ url: URL) -> String? {
+        var information = stat()
+        guard lstat(url.path, &information) == 0 else { return nil }
+        return "\(information.st_dev):\(information.st_ino)"
     }
 
     private static func forEachUsageRecord(
-        in data: Data,
-        body: (Record) throws -> Void
+        in data: Data.SubSequence,
+        body: (Record, Int) throws -> Void
     ) throws {
         var searchStart = data.startIndex
         while searchStart < data.endIndex,
@@ -197,10 +324,44 @@ enum CodexUsageRecordScanner {
             if lineStart < lineEnd,
                let record = try? JSONDecoder().decode(Record.self, from: data[lineStart..<lineEnd])
             {
-                try body(record)
+                try body(record, data.distance(from: data.startIndex, to: lineStart))
             }
             searchStart = lineEnd < data.endIndex ? data.index(after: lineEnd) : data.endIndex
         }
+    }
+
+    private static func loadCache(from url: URL) -> ScanCache? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(ScanCache.self, from: data)
+    }
+
+    private static func writeCache(_ cache: ScanCache, to url: URL) throws {
+        let manager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try manager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(cache)
+        let temporary = directory.appendingPathComponent(".codex-scan-\(UUID().uuidString).tmp")
+        try data.write(to: temporary, options: .withoutOverwriting)
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
+        guard Darwin.rename(temporary.path, url.path) == 0 else {
+            let code = errno
+            try? manager.removeItem(at: temporary)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    private static func hash(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func adding(_ lhs: Int, _ rhs: Int) throws -> Int {

@@ -2,7 +2,33 @@
 set -euo pipefail
 
 script_dir="${0:A:h}"
-output_path="${1:-$HOME/Library/Application Support/BeaverMeter/beaver-meter-snapshot.json}"
+output_path="$HOME/Library/Application Support/BeaverMeter/beaver-meter-snapshot.json"
+collector_arguments=()
+while (( $# > 0 )); do
+  case "$1" in
+    --codex-only)
+      collector_arguments+=("--codex-only")
+      shift
+      ;;
+    --output)
+      if (( $# < 2 )); then
+        print -u2 "--output requires a path."
+        exit 2
+      fi
+      output_path="$2"
+      shift 2
+      ;;
+    -* )
+      print -u2 "Unknown BeaverMeter collector option: $1"
+      exit 2
+      ;;
+    *)
+      output_path="$1"
+      shift
+      ;;
+  esac
+done
+collector_arguments+=("--output" "$output_path")
 config_path="${BEAVER_METER_CONFIG:-${CODEX_WEEK_CONFIG:-$HOME/Library/Application Support/BeaverMeter/config.env}}"
 
 if [[ -r "$config_path" ]]; then
@@ -17,7 +43,7 @@ fi
 
 collector_override="${BEAVERMETER_COLLECTOR:-${CODEXWEEK_COLLECTOR:-}}"
 if [[ -n "$collector_override" && -x "$collector_override" ]]; then
-  exec "$collector_override" --output "$output_path"
+  exec "$collector_override" "${collector_arguments[@]}"
 fi
 
 for collector in \
@@ -25,7 +51,7 @@ for collector in \
   "$script_dir/BeaverMeterCollector" \
   "$script_dir/../MacOS/BeaverMeterCollector"; do
   if [[ -x "$collector" ]]; then
-    exec "$collector" --output "$output_path"
+    exec "$collector" "${collector_arguments[@]}"
   fi
 done
 

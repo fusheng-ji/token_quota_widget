@@ -10,16 +10,15 @@ enum CollectorProcessRunner {
         "The bundled usage collector is missing. Reinstall BeaverMeter."
 
     static func refresh(helper: URL, script: URL?, output: String) -> CollectorProcessResult {
-        if FileManager.default.isExecutableFile(atPath: helper.path) {
-            return run(executable: helper, arguments: ["--output", output])
-        }
-        guard let script else {
-            return CollectorProcessResult(status: -1, message: missingCollectorMessage)
-        }
-        return run(
-            executable: URL(fileURLWithPath: "/bin/zsh"),
-            arguments: [script.path, output]
-        )
+        runCollector(helper: helper, script: script, output: output, mode: nil)
+    }
+
+    static func refreshCodexTokens(
+        helper: URL,
+        script: URL?,
+        output: String
+    ) -> CollectorProcessResult {
+        runCollector(helper: helper, script: script, output: output, mode: "--codex-only")
     }
 
     static func importBrowserSession(helper: URL) -> CollectorProcessResult {
@@ -43,6 +42,25 @@ enum CollectorProcessRunner {
             standardInput: Data(token.utf8),
             discardsStandardOutput: true
         )
+    }
+
+    private static func runCollector(
+        helper: URL,
+        script: URL?,
+        output: String,
+        mode: String?
+    ) -> CollectorProcessResult {
+        let collectorArguments = [mode, "--output", output].compactMap { $0 }
+        if let script, FileManager.default.fileExists(atPath: script.path) {
+            return run(
+                executable: URL(fileURLWithPath: "/bin/zsh"),
+                arguments: [script.path] + collectorArguments
+            )
+        }
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
+            return CollectorProcessResult(status: -1, message: missingCollectorMessage)
+        }
+        return run(executable: helper, arguments: collectorArguments)
     }
 
     private static func run(

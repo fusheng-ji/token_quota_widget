@@ -4,7 +4,8 @@ import Foundation
 enum CodexTokenCollector {
     static func collect(
         previous: UsageValue<CodexTokenTotals>,
-        now: Date
+        now: Date,
+        scanCacheURL: URL? = nil
     ) async -> UsageValue<CodexTokenTotals> {
         do {
             let environment = ProcessInfo.processInfo.environment
@@ -28,8 +29,9 @@ enum CodexTokenCollector {
             let desktopTotals = try? CodexUsageRecordScanner.collect(
                 codexHomePath: codexHome,
                 now: now,
-                calendar: .current
-            )
+                calendar: .current,
+                cacheURL: scanCacheURL
+            ).totals
             let cacheRoot = environment["CODEX_TOKEN_CACHE_ROOT"]
                 .map { URL(fileURLWithPath: $0) }
             let snapshot: CostUsageTokenSnapshot

@@ -1,5 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
+setopt NO_BG_NICE
 
 project_dir="${0:A:h:h}"
 fixtures="$project_dir/Tests/Fixtures"
@@ -146,6 +147,130 @@ jq -e '
   .codexTokens.value.outputTokens == 25 and
   .codexTokens.value.reasoningTokens == 5
 ' "$snapshot" >/dev/null
+
+# The live App refresh updates only Codex. It must preserve the other provider
+# payloads byte-for-byte and avoid rewriting the snapshot when no usage changed.
+live_home="$test_dir/live-only-codex-home"
+live_dir="$live_home/sessions/$(date -v-9d '+%Y/%m/%d')"
+live_file="$live_dir/rollout-live-only.jsonl"
+live_snapshot="$test_dir/live-only-snapshot.json"
+live_cache="$test_dir/beaver-meter-codex-scan-v1.json"
+mkdir -p "$live_dir"
+
+CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
+CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
+  "$collector" --output "$live_snapshot" >/dev/null
+jq '
+  .codexTokens.value = {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    sessionCount: 0
+  }
+' "$live_snapshot" > "$test_dir/live-zero-snapshot.json"
+mv "$test_dir/live-zero-snapshot.json" "$live_snapshot"
+jq '{cursorCosts,cursorQuota,codexQuota,deepseekUsage}' "$live_snapshot" > "$test_dir/providers-before.json"
+
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"private-response-one\",\"session_id\":\"private-session\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10,\"reasoning_output_tokens\":3,\"total_tokens\":110}}}" \
+  > "$live_file"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 110 and .codexTokens.value.sessionCount == 1' "$live_snapshot" >/dev/null
+jq '{cursorCosts,cursorQuota,codexQuota,deepseekUsage}' "$live_snapshot" > "$test_dir/providers-after.json"
+cmp "$test_dir/providers-before.json" "$test_dir/providers-after.json"
+[[ "$(stat -f '%Lp' "$live_cache")" == "600" ]]
+if rg -q 'private-response|private-session|rollout-live-only|codex-home' "$live_cache"; then
+  print -u2 "Codex scan cache leaked an unhashed private identifier."
+  exit 1
+fi
+
+snapshot_checksum="$(shasum -a 256 "$live_snapshot" | cut -d' ' -f1)"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+[[ "$(shasum -a 256 "$live_snapshot" | cut -d' ' -f1)" == "$snapshot_checksum" ]]
+
+# Repeated response IDs are ignored even if the appended copy reports different totals.
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"private-response-one\",\"session_id\":\"private-session\",\"usage\":{\"input_tokens\":900,\"cached_input_tokens\":800,\"output_tokens\":90,\"reasoning_output_tokens\":30,\"total_tokens\":990}}}" \
+  >> "$live_file"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 110' "$live_snapshot" >/dev/null
+
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"private-response-two\",\"session_id\":\"private-session\",\"usage\":{\"input_tokens\":75,\"cached_input_tokens\":10,\"output_tokens\":15,\"reasoning_output_tokens\":2,\"total_tokens\":90}}}" \
+  >> "$live_file"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 200' "$live_snapshot" >/dev/null
+
+# The bundled shell wrapper forwards Codex-only mode and the configured root.
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"through-wrapper\",\"session_id\":\"private-session\",\"usage\":{\"input_tokens\":8,\"cached_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0,\"total_tokens\":10}}}" \
+  >> "$live_file"
+BEAVER_METER_CONFIG=/dev/null \
+BEAVERMETER_COLLECTOR="$collector" \
+CODEX_ROOT="$live_home" \
+  zsh "$project_dir/scripts/collect_beaver_meter.sh" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 210' "$live_snapshot" >/dev/null
+[[ "$(stat -f '%Lp' "$live_snapshot.lock")" == "600" ]]
+
+# A truncated rollout and a corrupt cache both fall back to a full rescan
+# without regressing an already measured same-day total.
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"replacement\",\"session_id\":\"replacement-session\",\"usage\":{\"input_tokens\":40,\"cached_input_tokens\":5,\"output_tokens\":10,\"reasoning_output_tokens\":1,\"total_tokens\":50}}}" \
+  > "$live_file"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 210' "$live_snapshot" >/dev/null
+print -r -- '{not-valid-json' > "$live_cache"
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"after-corruption\",\"session_id\":\"replacement-session\",\"usage\":{\"input_tokens\":8,\"cached_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0,\"total_tokens\":10}}}" \
+  >> "$live_file"
+CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 210' "$live_snapshot" >/dev/null
+
+# Full and Codex-only processes share the snapshot lock, so concurrent writes
+# always leave a valid schema and never erase the other provider values.
+for index in 1 2 3; do
+  print -r -- \
+    "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"concurrent-$index\",\"session_id\":\"replacement-session\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1,\"reasoning_output_tokens\":0,\"total_tokens\":2}}}" \
+    >> "$live_file"
+  CODEX_HOME="$live_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null &
+  codex_pid=$!
+  CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
+  CURSOR_SUMMARY_FIXTURE="$fixtures/cursor-summary-v3.json" \
+  CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
+  CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+  DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json" \
+  DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json" \
+    "$collector" --output "$live_snapshot" >/dev/null &
+  full_pid=$!
+  wait "$codex_pid" "$full_pid"
+  jq -e '
+    .schemaVersion == 5 and
+    .cursorCosts.status == "ready" and
+    .cursorQuota.status == "ready" and
+    .codexQuota.status == "ready" and
+    .deepseekUsage.status == "ready"
+  ' "$live_snapshot" >/dev/null
+done
+
+# A new local day with no completed responses clears yesterday's total.
+empty_home="$test_dir/empty-next-day-home"
+mkdir -p "$empty_home/sessions"
+jq '.dayStart = "2000-01-01T00:00:00Z"' "$live_cache" > "$test_dir/old-day-cache.json"
+mv "$test_dir/old-day-cache.json" "$live_cache"
+jq '
+  .generatedAt = "2000-01-01T00:00:00Z" |
+  .codexTokens.measuredAt = "2000-01-01T00:00:00Z" |
+  .codexTokens.lastAttemptAt = "2000-01-01T00:00:00Z"
+' "$live_snapshot" > "$test_dir/old-day-snapshot.json"
+mv "$test_dir/old-day-snapshot.json" "$live_snapshot"
+CODEX_HOME="$empty_home" "$collector" --codex-only --output "$live_snapshot" >/dev/null
+jq -e '.codexTokens.value.totalTokens == 0 and .codexTokens.value.sessionCount == 0' "$live_snapshot" >/dev/null
 
 CURSOR_STATE_DB="$test_dir/missing-cursor.vscdb" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
