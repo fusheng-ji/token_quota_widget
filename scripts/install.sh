@@ -6,6 +6,7 @@ user_root="${BEAVERMETER_USER_ROOT_OVERRIDE:-$HOME}"
 app_name="BeaverMeter.app"
 install_dir="$user_root/Applications"
 installed_app="$install_dir/$app_name"
+installed_widget="$installed_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex"
 agent_label="io.github.beavermeter.refresh"
 agent_path="$user_root/Library/LaunchAgents/$agent_label.plist"
 config_dir="$user_root/Library/Application Support/BeaverMeter"
@@ -79,6 +80,25 @@ default_codex_root="${CODEX_ROOT:-$user_root/.codex}"
 read "codex_root?Codex data directory [$default_codex_root]: "
 codex_root="${codex_root:-$default_codex_root}"
 
+default_remote_host="${CODEX_REMOTE_SSH_HOST:-remote-host}"
+read "remote_codex_host?Remote Codex SSH host [$default_remote_host, - to disable]: "
+remote_codex_host="${remote_codex_host:-$default_remote_host}"
+if [[ "$remote_codex_host" == "-" ]]; then
+  remote_codex_host=""
+fi
+if [[ -n "$remote_codex_host" && ! "$remote_codex_host" =~ '^[A-Za-z0-9._@-]+$' ]]; then
+  print -u2 "Remote Codex SSH host contains unsupported characters."
+  exit 1
+fi
+
+default_remote_root="${CODEX_REMOTE_ROOT:-/home/user/.cursor-server/codex-home}"
+read "remote_codex_root?Remote Codex data directory [$default_remote_root]: "
+remote_codex_root="${remote_codex_root:-$default_remote_root}"
+
+default_remote_python="${CODEX_REMOTE_PYTHON:-/home/user/miniconda3/bin/python3}"
+read "remote_codex_python?Remote Python path [$default_remote_python]: "
+remote_codex_python="${remote_codex_python:-$default_remote_python}"
+
 default_cursor_state_db="${CURSOR_STATE_DB:-$user_root/Library/Application Support/Cursor/User/globalStorage/state.vscdb}"
 read "cursor_state_db?Cursor account database [$default_cursor_state_db]: "
 cursor_state_db="${cursor_state_db:-$default_cursor_state_db}"
@@ -129,6 +149,8 @@ cleanup() {
     fi
     if [[ -d "$prior_app_backup" ]]; then
       mv "$prior_app_backup" "$installed_app"
+      "$lsregister" -f -R -trusted "$installed_app" >/dev/null 2>&1 || true
+      pluginkit -a "$installed_widget" >/dev/null 2>&1 || true
     fi
     if [[ -f "$prior_agent_backup" ]]; then
       mv "$prior_agent_backup" "$agent_path"
@@ -151,11 +173,20 @@ DEVELOPER_DIR="$developer_dir" xcodebuild \
   -configuration Release \
   -derivedDataPath "$derived_data" \
   CODE_SIGNING_ALLOWED=YES \
+  ONLY_ACTIVE_ARCH=YES \
+  ARCHS="$(uname -m)" \
   "${signing_overrides[@]}" \
   build
 
 launchctl bootout "gui/$(id -u)/$agent_label" >/dev/null 2>&1 || true
 launchctl bootout "gui/$(id -u)/$legacy_agent_label" >/dev/null 2>&1 || true
+if [[ -d "$installed_widget" ]]; then
+  pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
+fi
+if [[ -d "$installed_app" ]]; then
+  "$lsregister" -u "$installed_app" >/dev/null 2>&1 || true
+fi
+killall chronod >/dev/null 2>&1 || true
 for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWidgetExtension; do
   pkill -x "$process_name" >/dev/null 2>&1 || true
 done
@@ -165,8 +196,12 @@ for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWi
     sleep 0.1
   done
   if pgrep -x "$process_name" >/dev/null 2>&1; then
-    print -u2 "Could not stop $process_name. Quit it manually and run the installer again."
-    exit 1
+    pkill -KILL -x "$process_name" >/dev/null 2>&1 || true
+    sleep 0.2
+    if pgrep -x "$process_name" >/dev/null 2>&1; then
+      print -u2 "Could not stop $process_name. Quit it manually and run the installer again."
+      exit 1
+    fi
   fi
 done
 
@@ -186,6 +221,9 @@ installed_new_app=1
 
 {
   printf 'CODEX_ROOT=%q\n' "$codex_root"
+  printf 'CODEX_REMOTE_SSH_HOST=%q\n' "$remote_codex_host"
+  printf 'CODEX_REMOTE_ROOT=%q\n' "$remote_codex_root"
+  printf 'CODEX_REMOTE_PYTHON=%q\n' "$remote_codex_python"
   printf 'CURSOR_STATE_DB=%q\n' "$cursor_state_db"
 } > "$config_path"
 chmod 600 "$config_path"
@@ -200,7 +238,6 @@ chmod 600 "$config_path"
 /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $log_dir/refresh.err.log" "$agent_path"
 
 legacy_widget="$legacy_app/Contents/PlugIns/CodexWeekWidgetExtension.appex"
-installed_widget="$installed_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex"
 if [[ -d "$legacy_widget" ]]; then
   pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
 fi

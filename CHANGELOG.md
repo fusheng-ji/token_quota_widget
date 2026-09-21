@@ -6,7 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.0.5] - 2026-09-21
+
 ### Fixed
+
+- Problem: Codex tasks running through the configured remote SSH host wrote
+  token records under the remote Cursor server and were absent from today's
+  menu-bar total.
+- Resolution: incrementally scan the optional remote Codex directory over SSH,
+  merge it with local usage by hashed response ID, and retain same-day remote
+  cache data with a stale warning when the connection is unavailable.
 
 - Problem: after replacing the app bundle, a Widget extension process from the
   previous build could remain alive while cleanup unregistered a DerivedData

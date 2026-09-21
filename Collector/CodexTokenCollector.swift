@@ -26,12 +26,11 @@ enum CodexTokenCollector {
             }
 
             let codexHome = environment["CODEX_HOME"]
-            let desktopTotals = try? CodexUsageRecordScanner.collect(
-                codexHomePath: codexHome,
+            let aggregation = try? CodexTokenAggregation.collect(
                 now: now,
-                calendar: .current,
-                cacheURL: scanCacheURL
-            ).totals
+                environment: environment,
+                localCacheURL: scanCacheURL
+            )
             let cacheRoot = environment["CODEX_TOKEN_CACHE_ROOT"]
                 .map { URL(fileURLWithPath: $0) }
             let snapshot: CostUsageTokenSnapshot
@@ -50,13 +49,13 @@ enum CodexTokenCollector {
                     includePiSessions: false
                 )
             } catch {
-                if let desktopTotals {
+                if let desktopTotals = aggregation?.totals {
                     return UsageValue(
-                        status: .ready,
+                        status: aggregation?.remote.complete == false ? .stale : .ready,
                         source: .codexBarLocal,
                         measuredAt: now,
                         lastAttemptAt: now,
-                        message: nil,
+                        message: aggregation?.remote.message,
                         value: desktopTotals
                     )
                 }
@@ -82,22 +81,28 @@ enum CodexTokenCollector {
             )
             let totals: CodexTokenTotals
             let usesDesktopRecords: Bool
-            if let desktopTotals, desktopTotals.totalTokens > codexBarTotals.totalTokens {
+            if let aggregation, let desktopTotals = aggregation.totals,
+               desktopTotals.totalTokens > codexBarTotals.totalTokens
+            {
                 totals = desktopTotals
                 usesDesktopRecords = true
             } else {
-                totals = codexBarTotals
-                usesDesktopRecords = false
+                totals = try CodexTokenAggregation.adding(
+                    codexBarTotals,
+                    aggregation?.remoteUniqueTotals
+                )
+                usesDesktopRecords = aggregation?.remoteUniqueTotals != nil
             }
             let isComplete = snapshot.historyCoverageIsEstablished
+            let remoteIsComplete = aggregation?.remote.complete ?? true
             return UsageValue(
-                status: usesDesktopRecords || isComplete ? .ready : .stale,
+                status: remoteIsComplete && (usesDesktopRecords || isComplete) ? .ready : .stale,
                 source: .codexBarLocal,
                 measuredAt: usesDesktopRecords ? now : snapshot.updatedAt,
                 lastAttemptAt: now,
-                message: usesDesktopRecords || isComplete
+                message: aggregation?.remote.message ?? (usesDesktopRecords || isComplete
                     ? nil
-                    : "Indexing Codex sessions; totals may increase on the next refresh.",
+                    : "Indexing Codex sessions; totals may increase on the next refresh."),
                 value: totals
             )
         } catch {

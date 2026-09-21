@@ -154,7 +154,7 @@ live_home="$test_dir/live-only-codex-home"
 live_dir="$live_home/sessions/$(date -v-9d '+%Y/%m/%d')"
 live_file="$live_dir/rollout-live-only.jsonl"
 live_snapshot="$test_dir/live-only-snapshot.json"
-live_cache="$test_dir/beaver-meter-codex-scan-v1.json"
+live_cache="$test_dir/beaver-meter-codex-scan-v2.json"
 mkdir -p "$live_dir"
 
 CURSOR_EVENTS_FIXTURE="$fixtures/cursor-events-v3.json" \
@@ -217,6 +217,67 @@ CODEX_ROOT="$live_home" \
   zsh "$project_dir/scripts/collect_beaver_meter.sh" --codex-only --output "$live_snapshot" >/dev/null
 jq -e '.codexTokens.value.totalTokens == 210' "$live_snapshot" >/dev/null
 [[ "$(stat -f '%Lp' "$live_snapshot.lock")" == "600" ]]
+
+# Optional remote records are merged with local records by response hash. The
+# remote protocol contains only hashed identifiers and numeric usage fields.
+remote_home="$test_dir/remote-merge-home"
+remote_dir="$remote_home/archived_sessions/old-task"
+remote_local_file="$remote_dir/rollout-local.jsonl"
+remote_snapshot="$test_dir/remote-merge-snapshot.json"
+remote_fixture="$test_dir/remote-response.json"
+mkdir -p "$remote_dir"
+shared_hash="$(printf %s 'shared-response' | shasum -a 256 | cut -d' ' -f1)"
+shared_session_hash="$(printf %s 'shared-session' | shasum -a 256 | cut -d' ' -f1)"
+unique_hash="$(printf %s 'remote-unique' | shasum -a 256 | cut -d' ' -f1)"
+unique_session_hash="$(printf %s 'remote-session' | shasum -a 256 | cut -d' ' -f1)"
+epoch_now="$(date '+%s')"
+print -r -- \
+  "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"shared-response\",\"session_id\":\"shared-session\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10,\"reasoning_output_tokens\":3}}}" \
+  > "$remote_local_file"
+cat > "$remote_fixture" <<EOF
+{"activeFiles":["remote-file"],"files":{"remote-file":{"offset":500,"reset":false,"records":[{"responseHash":"$shared_hash","sessionHash":"$shared_session_hash","timestamp":$epoch_now,"inputTokens":900,"cachedInputTokens":800,"outputTokens":90,"reasoningTokens":30},{"responseHash":"$unique_hash","sessionHash":"$unique_session_hash","timestamp":$epoch_now,"inputTokens":200,"cachedInputTokens":50,"outputTokens":20,"reasoningTokens":4}]}}}
+EOF
+CODEX_HOME="$remote_home" \
+CODEX_REMOTE_SSH_HOST="fixture-host" \
+CODEX_REMOTE_ROOT="/fixture/codex" \
+CODEX_REMOTE_PYTHON="/fixture/python3" \
+CODEX_REMOTE_RESPONSE_FIXTURE="$remote_fixture" \
+  "$collector" --codex-only --output "$remote_snapshot" >/dev/null
+jq -e '
+  .codexTokens.status == "ready" and
+  .codexTokens.value.totalTokens == 330 and
+  .codexTokens.value.inputTokens == 300 and
+  .codexTokens.value.outputTokens == 30 and
+  .codexTokens.value.sessionCount == 2
+' "$remote_snapshot" >/dev/null
+remote_cache="$test_dir/beaver-meter-codex-remote-scan-v1.json"
+[[ "$(stat -f '%Lp' "$remote_cache")" == "600" ]]
+if rg -q 'shared-response|shared-session|remote-unique|remote-session|fixture/codex' "$remote_cache"; then
+  print -u2 "Remote Codex cache leaked an unhashed identifier."
+  exit 1
+fi
+
+# A failed remote refresh retains the current-day remote cache and marks the
+# otherwise fresh local total as incomplete. A subsequent success clears it.
+CODEX_HOME="$remote_home" \
+CODEX_REMOTE_SSH_HOST="fixture-host" \
+CODEX_REMOTE_ROOT="/fixture/codex" \
+CODEX_REMOTE_PYTHON="/fixture/python3" \
+CODEX_REMOTE_RESPONSE_FIXTURE="$test_dir/missing-remote-response.json" \
+  "$collector" --codex-only --output "$remote_snapshot" >/dev/null
+jq -e '
+  .codexTokens.status == "stale" and
+  .codexTokens.value.totalTokens == 330 and
+  (.codexTokens.message | contains("last remote reading"))
+' "$remote_snapshot" >/dev/null
+print -r -- '{"activeFiles":["remote-file"],"files":{}}' > "$remote_fixture"
+CODEX_HOME="$remote_home" \
+CODEX_REMOTE_SSH_HOST="fixture-host" \
+CODEX_REMOTE_ROOT="/fixture/codex" \
+CODEX_REMOTE_PYTHON="/fixture/python3" \
+CODEX_REMOTE_RESPONSE_FIXTURE="$remote_fixture" \
+  "$collector" --codex-only --output "$remote_snapshot" >/dev/null
+jq -e '.codexTokens.status == "ready" and .codexTokens.value.totalTokens == 330' "$remote_snapshot" >/dev/null
 
 # A truncated rollout and a corrupt cache both fall back to a full rescan
 # without regressing an already measured same-day total.

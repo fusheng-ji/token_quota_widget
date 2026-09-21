@@ -72,17 +72,11 @@ struct BeaverMeterCollector {
         let previous = SnapshotWriter.loadPrevious(from: outputURL)
         let now = Date()
         let environment = ProcessInfo.processInfo.environment
-        let result = try CodexUsageRecordScanner.collect(
-            codexHomePath: environment["CODEX_HOME"],
+        let result = try CodexTokenAggregation.collect(
             now: now,
-            calendar: .current,
-            cacheURL: codexScanCacheURL(for: outputURL)
+            environment: environment,
+            localCacheURL: codexScanCacheURL(for: outputURL)
         )
-        guard result.changed else {
-            print(outputURL.path)
-            return
-        }
-
         let previousWasMeasuredToday = previous.codexTokens.measuredAt.map {
             Calendar.current.isDate($0, inSameDayAs: now)
         } ?? false
@@ -92,35 +86,40 @@ struct BeaverMeterCollector {
                let previousTotals = previous.codexTokens.value,
                collectedTotals.totalTokens < previousTotals.totalTokens
             {
-                print(outputURL.path)
-                return
+                totals = previousTotals
+            } else {
+                totals = collectedTotals
             }
-            totals = collectedTotals
         } else {
             if previousWasMeasuredToday, previous.codexTokens.value != nil {
-                print(outputURL.path)
-                return
+                totals = previous.codexTokens.value!
+            } else {
+                totals = CodexTokenTotals(
+                    totalTokens: 0,
+                    inputTokens: 0,
+                    cachedInputTokens: 0,
+                    outputTokens: 0,
+                    reasoningTokens: 0,
+                    sessionCount: 0
+                )
             }
-            totals = CodexTokenTotals(
-                totalTokens: 0,
-                inputTokens: 0,
-                cachedInputTokens: 0,
-                outputTokens: 0,
-                reasoningTokens: 0,
-                sessionCount: 0
-            )
         }
-        guard previous.codexTokens.status != .ready || previous.codexTokens.value != totals else {
+        let status: UsageDataStatus = result.remote.complete ? .ready : .stale
+        guard result.changed
+                || previous.codexTokens.status != status
+                || previous.codexTokens.message != result.remote.message
+                || previous.codexTokens.value != totals
+        else {
             print(outputURL.path)
             return
         }
 
         let codexTokens = UsageValue(
-            status: UsageDataStatus.ready,
+            status: status,
             source: UsageDataSource.codexBarLocal,
             measuredAt: now,
             lastAttemptAt: now,
-            message: nil,
+            message: result.remote.message,
             value: totals
         )
         let snapshot = UsageSnapshot(
@@ -138,7 +137,7 @@ struct BeaverMeterCollector {
 
     private static func codexScanCacheURL(for outputURL: URL) -> URL {
         outputURL.deletingLastPathComponent()
-            .appendingPathComponent("beaver-meter-codex-scan-v1.json")
+            .appendingPathComponent("beaver-meter-codex-scan-v2.json")
     }
 
     private static func importDeepSeekBrowserSession() async {

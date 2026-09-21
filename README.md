@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 14+"></a>
   <a href="https://www.swift.org/"><img src="https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5.0 / 6.0"></a>
-  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.0.4-4C7CF3?style=flat-square" alt="Version 5.0.4"></a>
+  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.0.5-4C7CF3?style=flat-square" alt="Version 5.0.5"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square" alt="MIT License"></a>
 </p>
 
@@ -91,6 +91,14 @@ commit [`07f2a670229bca1a34bb7eda5284c89657b8df9a`](https://github.com/steipete/
 Its local scanner aggregates the current local day across `~/.codex/sessions`,
 including compressed sessions, duplicate events, file boundaries and newly
 appended events in a still-running Codex task.
+
+An optional SSH source can add Codex tasks running on another machine. The
+installer configures the SSH host, remote Codex directory and Python path. The
+bundled read-only scanner returns only hashed response/session identifiers,
+timestamps and token counts; prompts, responses and credentials never leave
+the remote host. Local and remote responses are deduplicated before display.
+When SSH is temporarily unavailable, BeaverMeter retains the last remote
+reading from the current local day and marks the total stale.
 
 The displayed total is `input + output`. Cached input is part of input and
 reasoning is part of output, so neither detail is counted twice.
@@ -274,6 +282,8 @@ fallback, migration precedence, file permissions and snapshot privacy.
 - **Cursor says Sign in:** open Cursor, confirm the intended account is active,
   then refresh.
 - **Codex has no token data:** run at least one local Codex session and refresh.
+- **Remote Codex is missing:** verify that the configured SSH alias works in a
+  non-interactive terminal and that the remote Codex and Python paths still exist.
 - **DeepSeek says Connect:** choose **Connect in browser…** and finish signing in
   on the official page. Safari may request Automation permission; enable both
   developer settings described above, then use **Check now**.

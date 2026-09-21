@@ -24,6 +24,9 @@ if [[ ! -d "$installed_app" ]]; then
   exit 1
 fi
 
+pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
+"$lsregister" -u "$installed_app" >/dev/null 2>&1 || true
+killall chronod >/dev/null 2>&1 || true
 for process_name in BeaverMeter BeaverMeterWidgetExtension; do
   pkill -x "$process_name" >/dev/null 2>&1 || true
 done
@@ -33,8 +36,12 @@ for process_name in BeaverMeter BeaverMeterWidgetExtension; do
     sleep 0.1
   done
   if pgrep -x "$process_name" >/dev/null 2>&1; then
-    print -u2 "Could not stop $process_name while repairing WidgetKit."
-    exit 1
+    pkill -KILL -x "$process_name" >/dev/null 2>&1 || true
+    sleep 0.2
+    if pgrep -x "$process_name" >/dev/null 2>&1; then
+      print -u2 "Could not stop $process_name while repairing WidgetKit."
+      exit 1
+    fi
   fi
 done
 

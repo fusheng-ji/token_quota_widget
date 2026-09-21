@@ -9,14 +9,14 @@ legacy_dir="$test_root/Library/Application Support/CodexWeek"
 new_dir="$test_root/Library/Application Support/BeaverMeter"
 mkdir -p "$legacy_dir"
 
-printf 'CODEX_ROOT=/custom/codex\nCURSOR_STATE_DB=/custom/cursor.db\n' > "$legacy_dir/config.env"
+printf 'CODEX_ROOT=/custom/codex\nCODEX_REMOTE_SSH_HOST=remote-box\nCODEX_REMOTE_ROOT=/remote/codex\nCODEX_REMOTE_PYTHON=/remote/python3\nCURSOR_STATE_DB=/custom/cursor.db\n' > "$legacy_dir/config.env"
 printf 'legacy-deepseek-token\n' > "$legacy_dir/deepseek-platform-token"
 printf '{"schemaVersion":5}\n' > "$legacy_dir/codex-week-snapshot.json"
 chmod 644 "$legacy_dir/config.env" "$legacy_dir/deepseek-platform-token" "$legacy_dir/codex-week-snapshot.json"
 
 BEAVERMETER_USER_ROOT_OVERRIDE="$test_root" zsh "$repo_dir/scripts/migrate_beavermeter_data.sh" >/dev/null
 
-[[ "$(cat "$new_dir/config.env")" == $'CODEX_ROOT=/custom/codex\nCURSOR_STATE_DB=/custom/cursor.db' ]]
+[[ "$(cat "$new_dir/config.env")" == $'CODEX_ROOT=/custom/codex\nCODEX_REMOTE_SSH_HOST=remote-box\nCODEX_REMOTE_ROOT=/remote/codex\nCODEX_REMOTE_PYTHON=/remote/python3\nCURSOR_STATE_DB=/custom/cursor.db' ]]
 [[ "$(cat "$new_dir/deepseek-platform-token")" == "legacy-deepseek-token" ]]
 [[ "$(/usr/bin/plutil -extract schemaVersion raw -o - "$new_dir/beaver-meter-snapshot.json")" == "5" ]]
 [[ "$(stat -f '%Lp' "$new_dir")" == "700" ]]

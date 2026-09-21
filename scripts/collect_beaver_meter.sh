@@ -40,6 +40,10 @@ fi
 if [[ -n "${CURSOR_STATE_DB:-}" ]]; then
   export CURSOR_STATE_DB
 fi
+[[ -n "${CODEX_REMOTE_SSH_HOST:-}" ]] && export CODEX_REMOTE_SSH_HOST
+[[ -n "${CODEX_REMOTE_ROOT:-}" ]] && export CODEX_REMOTE_ROOT
+[[ -n "${CODEX_REMOTE_PYTHON:-}" ]] && export CODEX_REMOTE_PYTHON
+export BEAVERMETER_REMOTE_SCRIPT="$script_dir/remote_codex_usage.py"
 
 collector_override="${BEAVERMETER_COLLECTOR:-${CODEXWEEK_COLLECTOR:-}}"
 if [[ -n "$collector_override" && -x "$collector_override" ]]; then

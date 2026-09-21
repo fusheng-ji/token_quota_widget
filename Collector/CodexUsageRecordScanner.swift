@@ -6,13 +6,23 @@ import Foundation
 /// The private scan cache stores only hashes and byte offsets, so frequent live
 /// refreshes consume appended JSONL tails instead of rereading whole rollouts.
 enum CodexUsageRecordScanner {
+    struct AccumulatedUsage: Codable, Hashable, Sendable {
+        let inputTokens: Int
+        let cachedInputTokens: Int
+        let outputTokens: Int
+        let reasoningTokens: Int
+        let sessionHash: String
+    }
+
     struct Result {
         let totals: CodexTokenTotals?
         let changed: Bool
+        let usageByResponseHash: [String: AccumulatedUsage]
+        let sessionHashes: Set<String>
     }
 
     private static let activeSessionLookbackDays = 30
-    private static let cacheSchemaVersion = 1
+    private static let cacheSchemaVersion = 2
     private static let recordMarker = Data(#""token_usage_record""#.utf8)
 
     private struct Record: Decodable {
@@ -56,23 +66,11 @@ enum CodexUsageRecordScanner {
 
     private struct FileState: Codable {
         var offset: Int
-        var inputTokens: Int
-        var cachedInputTokens: Int
-        var outputTokens: Int
-        var reasoningTokens: Int
-        var responseHashes: Set<String>
-        var sessionHashes: Set<String>
-        var recordCount: Int
+        var records: [String: AccumulatedUsage]
 
         static let empty = FileState(
             offset: 0,
-            inputTokens: 0,
-            cachedInputTokens: 0,
-            outputTokens: 0,
-            reasoningTokens: 0,
-            responseHashes: [],
-            sessionHashes: [],
-            recordCount: 0
+            records: [:]
         )
     }
 
@@ -138,7 +136,7 @@ enum CodexUsageRecordScanner {
         let standardFormatter = ISO8601DateFormatter()
         standardFormatter.formatOptions = [.withInternetDateTime]
 
-        var knownResponses = Set(cache.files.values.flatMap(\.responseHashes))
+        var knownResponses = Set(cache.files.values.flatMap { $0.records.keys })
         var addedRecords = 0
 
         for candidate in candidates {
@@ -178,19 +176,13 @@ enum CodexUsageRecordScanner {
                 let responseHash = hash(responseIdentity)
                 guard knownResponses.insert(responseHash).inserted else { return }
 
-                state.inputTokens = try adding(state.inputTokens, usage.inputTokens)
-                state.cachedInputTokens = try adding(
-                    state.cachedInputTokens,
-                    usage.cachedInputTokens ?? 0
+                state.records[responseHash] = AccumulatedUsage(
+                    inputTokens: usage.inputTokens,
+                    cachedInputTokens: usage.cachedInputTokens ?? 0,
+                    outputTokens: usage.outputTokens,
+                    reasoningTokens: usage.reasoningOutputTokens ?? 0,
+                    sessionHash: hash(record.payload.sessionID ?? candidate.identity)
                 )
-                state.outputTokens = try adding(state.outputTokens, usage.outputTokens)
-                state.reasoningTokens = try adding(
-                    state.reasoningTokens,
-                    usage.reasoningOutputTokens ?? 0
-                )
-                state.responseHashes.insert(responseHash)
-                state.sessionHashes.insert(hash(record.payload.sessionID ?? candidate.identity))
-                state.recordCount += 1
                 addedRecords += 1
             }
 
@@ -202,34 +194,45 @@ enum CodexUsageRecordScanner {
             try? writeCache(cache, to: cacheURL)
         }
 
+        var usageByResponseHash: [String: AccumulatedUsage] = [:]
+        for state in cache.files.values {
+            for (responseHash, usage) in state.records where usageByResponseHash[responseHash] == nil {
+                usageByResponseHash[responseHash] = usage
+            }
+        }
+        let sessionHashes = Set(usageByResponseHash.values.map(\.sessionHash))
+        let totals = try totals(for: usageByResponseHash, sessionHashes: sessionHashes)
+        return Result(
+            totals: totals,
+            changed: resetCache || addedRecords > 0,
+            usageByResponseHash: usageByResponseHash,
+            sessionHashes: sessionHashes
+        )
+    }
+
+    static func totals(
+        for records: [String: AccumulatedUsage],
+        sessionHashes: Set<String>? = nil
+    ) throws -> CodexTokenTotals? {
+        guard !records.isEmpty else { return nil }
         var inputTokens = 0
         var cachedInputTokens = 0
         var outputTokens = 0
         var reasoningTokens = 0
-        var recordCount = 0
-        var sessionHashes: Set<String> = []
-        for state in cache.files.values {
-            inputTokens = try adding(inputTokens, state.inputTokens)
-            cachedInputTokens = try adding(cachedInputTokens, state.cachedInputTokens)
-            outputTokens = try adding(outputTokens, state.outputTokens)
-            reasoningTokens = try adding(reasoningTokens, state.reasoningTokens)
-            recordCount = try adding(recordCount, state.recordCount)
-            sessionHashes.formUnion(state.sessionHashes)
+        for usage in records.values {
+            inputTokens = try adding(inputTokens, usage.inputTokens)
+            cachedInputTokens = try adding(cachedInputTokens, usage.cachedInputTokens)
+            outputTokens = try adding(outputTokens, usage.outputTokens)
+            reasoningTokens = try adding(reasoningTokens, usage.reasoningTokens)
         }
-
-        let totals: CodexTokenTotals? = if recordCount > 0 {
-            CodexTokenTotals(
-                totalTokens: try adding(inputTokens, outputTokens),
-                inputTokens: inputTokens,
-                cachedInputTokens: cachedInputTokens,
-                outputTokens: outputTokens,
-                reasoningTokens: reasoningTokens,
-                sessionCount: sessionHashes.count
-            )
-        } else {
-            nil
-        }
-        return Result(totals: totals, changed: resetCache || addedRecords > 0)
+        return CodexTokenTotals(
+            totalTokens: try adding(inputTokens, outputTokens),
+            inputTokens: inputTokens,
+            cachedInputTokens: cachedInputTokens,
+            outputTokens: outputTokens,
+            reasoningTokens: reasoningTokens,
+            sessionCount: (sessionHashes ?? Set(records.values.map(\.sessionHash))).count
+        )
     }
 
     private static func resolvedCodexHome(_ configuredPath: String?) -> URL {
