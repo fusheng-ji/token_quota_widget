@@ -7,7 +7,21 @@ fixtures="$project_dir/Tests/Fixtures"
 collector="${1:-${BEAVERMETER_COLLECTOR:-/private/tmp/beavermeter-derived/Build/Products/Debug/BeaverMeterCollector}}"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/cursor-codex-tests.XXXXXX")"
 
+# The test suite never inherits real account paths or an SSH source. Every
+# provider that could contact a service uses a fixture or an intentionally
+# missing database/file in the individual case below.
+unset CODEX_REMOTE_SSH_HOST CODEX_REMOTE_ROOT CODEX_REMOTE_PYTHON CODEX_REMOTE_RESPONSE_FIXTURE BEAVERMETER_SSH
+unset DEEPSEEK_PLATFORM_TOKEN CODEX_HOME CODEX_TOKEN_FIXTURE CODEX_LEGACY_TOKEN_FIXTURE CURSOR_STATE_DB
+export CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json"
+export DEEPSEEK_SUMMARY_FIXTURE="$fixtures/deepseek-summary.json"
+export DEEPSEEK_USAGE_FIXTURE="$fixtures/deepseek-usage.json"
+
 cleanup() {
+  local failure_status=$?
+  if (( failure_status )) && [[ -f "${live_snapshot:-}" ]]; then
+    print -u2 "Collector test failed; final Codex snapshot:"
+    jq '.codexTokens' "$live_snapshot" >&2 || true
+  fi
   [[ -d "$test_dir" ]] && rm -rf "$test_dir"
 }
 trap cleanup EXIT
@@ -223,9 +237,15 @@ jq -e '.codexTokens.value.totalTokens == 210' "$live_snapshot" >/dev/null
 remote_home="$test_dir/remote-merge-home"
 remote_dir="$remote_home/archived_sessions/old-task"
 remote_local_file="$remote_dir/rollout-local.jsonl"
-remote_snapshot="$test_dir/remote-merge-snapshot.json"
-remote_fixture="$test_dir/remote-response.json"
-mkdir -p "$remote_dir"
+remote_case_dir="$test_dir/remote-case"
+remote_snapshot="$remote_case_dir/snapshot.json"
+remote_fixture="$remote_case_dir/response.json"
+# This case isolates the remote protocol from CodexBar's incomplete history
+# indexing of its synthetic record-only local rollout.
+legacy_zero_fixture="$test_dir/legacy-zero.json"
+print -r -- '{"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"outputTokens":0,"reasoningTokens":0,"sessionCount":0}' > "$legacy_zero_fixture"
+export CODEX_LEGACY_TOKEN_FIXTURE="$legacy_zero_fixture"
+mkdir -p "$remote_dir" "$remote_case_dir"
 shared_hash="$(printf %s 'shared-response' | shasum -a 256 | cut -d' ' -f1)"
 shared_session_hash="$(printf %s 'shared-session' | shasum -a 256 | cut -d' ' -f1)"
 unique_hash="$(printf %s 'remote-unique' | shasum -a 256 | cut -d' ' -f1)"
@@ -235,7 +255,7 @@ print -r -- \
   "{\"type\":\"token_usage_record\",\"timestamp\":\"$timestamp\",\"payload\":{\"response_id\":\"shared-response\",\"session_id\":\"shared-session\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":10,\"reasoning_output_tokens\":3}}}" \
   > "$remote_local_file"
 cat > "$remote_fixture" <<EOF
-{"activeFiles":["remote-file"],"files":{"remote-file":{"offset":500,"reset":false,"records":[{"responseHash":"$shared_hash","sessionHash":"$shared_session_hash","timestamp":$epoch_now,"inputTokens":900,"cachedInputTokens":800,"outputTokens":90,"reasoningTokens":30},{"responseHash":"$unique_hash","sessionHash":"$unique_session_hash","timestamp":$epoch_now,"inputTokens":200,"cachedInputTokens":50,"outputTokens":20,"reasoningTokens":4}]}}}
+{"complete":true,"failedFiles":[],"activeFiles":["remote-file"],"files":{"remote-file":{"offset":500,"reset":false,"records":[{"responseHash":"$shared_hash","sessionHash":"$shared_session_hash","timestamp":$epoch_now,"inputTokens":900,"cachedInputTokens":800,"outputTokens":90,"reasoningTokens":30},{"responseHash":"$unique_hash","sessionHash":"$unique_session_hash","timestamp":$epoch_now,"inputTokens":200,"cachedInputTokens":50,"outputTokens":20,"reasoningTokens":4}]}}}
 EOF
 CODEX_HOME="$remote_home" \
 CODEX_REMOTE_SSH_HOST="fixture-host" \
@@ -250,7 +270,7 @@ jq -e '
   .codexTokens.value.outputTokens == 30 and
   .codexTokens.value.sessionCount == 2
 ' "$remote_snapshot" >/dev/null
-remote_cache="$test_dir/beaver-meter-codex-remote-scan-v1.json"
+remote_cache="$remote_case_dir/beaver-meter-codex-remote-scan-v1.json"
 [[ "$(stat -f '%Lp' "$remote_cache")" == "600" ]]
 if rg -q 'shared-response|shared-session|remote-unique|remote-session|fixture/codex' "$remote_cache"; then
   print -u2 "Remote Codex cache leaked an unhashed identifier."
@@ -270,7 +290,7 @@ jq -e '
   .codexTokens.value.totalTokens == 330 and
   (.codexTokens.message | contains("last remote reading"))
 ' "$remote_snapshot" >/dev/null
-print -r -- '{"activeFiles":["remote-file"],"files":{}}' > "$remote_fixture"
+print -r -- '{"complete":true,"failedFiles":[],"activeFiles":["remote-file"],"files":{}}' > "$remote_fixture"
 CODEX_HOME="$remote_home" \
 CODEX_REMOTE_SSH_HOST="fixture-host" \
 CODEX_REMOTE_ROOT="/fixture/codex" \
@@ -278,6 +298,7 @@ CODEX_REMOTE_PYTHON="/fixture/python3" \
 CODEX_REMOTE_RESPONSE_FIXTURE="$remote_fixture" \
   "$collector" --codex-only --output "$remote_snapshot" >/dev/null
 jq -e '.codexTokens.status == "ready" and .codexTokens.value.totalTokens == 330' "$remote_snapshot" >/dev/null
+unset CODEX_LEGACY_TOKEN_FIXTURE
 
 # A truncated rollout and a corrupt cache both fall back to a full rescan
 # without regressing an already measured same-day total.
@@ -336,6 +357,7 @@ jq -e '.codexTokens.value.totalTokens == 0 and .codexTokens.value.sessionCount =
 CURSOR_STATE_DB="$test_dir/missing-cursor.vscdb" \
 CODEX_TOKEN_FIXTURE="$fixtures/codex-token-totals.json" \
 CODEX_USAGE_FIXTURE="$fixtures/codex-pro-week.json" \
+DEEPSEEK_USAGE_FIXTURE="$test_dir/missing-deepseek-usage.json" \
   "$collector" --output "$snapshot" >/dev/null
 
 jq -e '

@@ -9,30 +9,32 @@ enum CollectorProcessRunner {
     private static let missingCollectorMessage =
         "The bundled usage collector is missing. Reinstall BeaverMeter."
 
-    static func refresh(helper: URL, script: URL?, output: String) -> CollectorProcessResult {
-        runCollector(helper: helper, script: script, output: output, mode: nil)
+    static func refresh(helper: URL, script: URL?, output: String, cancellation: SubprocessCancellation? = nil) -> CollectorProcessResult {
+        runCollector(helper: helper, script: script, output: output, mode: nil, cancellation: cancellation)
     }
 
     static func refreshCodexTokens(
         helper: URL,
         script: URL?,
-        output: String
+        output: String,
+        cancellation: SubprocessCancellation? = nil
     ) -> CollectorProcessResult {
-        runCollector(helper: helper, script: script, output: output, mode: "--codex-only")
+        runCollector(helper: helper, script: script, output: output, mode: "--codex-only", cancellation: cancellation)
     }
 
-    static func importBrowserSession(helper: URL) -> CollectorProcessResult {
+    static func importBrowserSession(helper: URL, cancellation: SubprocessCancellation? = nil) -> CollectorProcessResult {
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             return CollectorProcessResult(status: -1, message: missingCollectorMessage)
         }
         return run(
             executable: helper,
             arguments: ["--import-deepseek-browser-session"],
-            discardsStandardOutput: true
+            timeout: 60,
+            cancellation: cancellation
         )
     }
 
-    static func importToken(helper: URL, token: String) -> CollectorProcessResult {
+    static func importToken(helper: URL, token: String, cancellation: SubprocessCancellation? = nil) -> CollectorProcessResult {
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             return CollectorProcessResult(status: -1, message: missingCollectorMessage)
         }
@@ -40,7 +42,8 @@ enum CollectorProcessRunner {
             executable: helper,
             arguments: ["--import-deepseek-token-stdin"],
             standardInput: Data(token.utf8),
-            discardsStandardOutput: true
+            timeout: 60,
+            cancellation: cancellation
         )
     }
 
@@ -48,53 +51,52 @@ enum CollectorProcessRunner {
         helper: URL,
         script: URL?,
         output: String,
-        mode: String?
+        mode: String?,
+        cancellation: SubprocessCancellation?
     ) -> CollectorProcessResult {
         let collectorArguments = [mode, "--output", output].compactMap { $0 }
         if let script, FileManager.default.fileExists(atPath: script.path) {
             return run(
                 executable: URL(fileURLWithPath: "/bin/zsh"),
-                arguments: [script.path] + collectorArguments
+                arguments: [script.path] + collectorArguments,
+                timeout: 180,
+                cancellation: cancellation
             )
         }
         guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             return CollectorProcessResult(status: -1, message: missingCollectorMessage)
         }
-        return run(executable: helper, arguments: collectorArguments)
+        return run(executable: helper, arguments: collectorArguments, timeout: 180, cancellation: cancellation)
     }
 
     private static func run(
         executable: URL,
         arguments: [String],
         standardInput: Data? = nil,
-        discardsStandardOutput: Bool = false
+        timeout: TimeInterval,
+        cancellation: SubprocessCancellation?
     ) -> CollectorProcessResult {
-        let process = Process()
-        let errorPipe = Pipe()
-        let inputPipe = standardInput.map { _ in Pipe() }
-
-        process.executableURL = executable
-        process.arguments = arguments
-        process.standardInput = inputPipe
-        process.standardError = errorPipe
-        if discardsStandardOutput {
-            process.standardOutput = FileHandle.nullDevice
-        }
-
         do {
-            try process.run()
-            if let standardInput, let inputPipe {
-                inputPipe.fileHandleForWriting.write(standardInput)
-                try inputPipe.fileHandleForWriting.close()
+            let result = try SubprocessRunner.run(
+                executable: executable,
+                arguments: arguments,
+                standardInput: standardInput,
+                timeout: timeout,
+                captureStandardOutput: false,
+                cancellation: cancellation
+            )
+            if result.cancelled {
+                return CollectorProcessResult(status: -1, message: "Refresh cancelled.")
             }
-            process.waitUntilExit()
+            if result.timedOut {
+                return CollectorProcessResult(status: -1, message: "Refresh timed out; cached data is still available. Try again.")
+            }
             let message = String(
-                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+                data: result.standardError,
                 encoding: .utf8
             )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return CollectorProcessResult(status: process.terminationStatus, message: message)
+            return CollectorProcessResult(status: result.status, message: message)
         } catch {
-            try? inputPipe?.fileHandleForWriting.close()
             return CollectorProcessResult(status: -1, message: error.localizedDescription)
         }
     }

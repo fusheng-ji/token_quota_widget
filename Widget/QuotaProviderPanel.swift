@@ -25,12 +25,6 @@ enum QuotaProviderKind {
         }
     }
 
-    var gradientEnd: Color {
-        switch self {
-        case .codex: Color(red: 0.05, green: 0.31, blue: 0.30)
-        case .cursor: Color(red: 0.20, green: 0.16, blue: 0.46)
-        }
-    }
 }
 
 enum QuotaPanelDensity {
@@ -42,7 +36,7 @@ enum QuotaPanelDensity {
     var padding: CGFloat {
         switch self {
         case .strip: 6
-        case .compact: 8
+        case .compact: 6
         case .regular: 12
         case .expanded: 16
         }
@@ -51,7 +45,7 @@ enum QuotaPanelDensity {
     var spacing: CGFloat {
         switch self {
         case .strip: 2
-        case .compact: 3
+        case .compact: 2
         case .regular: 6
         case .expanded: 8
         }
@@ -71,6 +65,8 @@ struct QuotaProviderPanel: View {
     let provider: QuotaProviderKind
     let data: UsageValue<CompactQuota>
     let density: QuotaPanelDensity
+    var dailyTokens: UsageValue<CodexTokenTotals>?
+    var referenceDate: Date = .now
 
     private var quota: CompactQuota? { data.value }
     private var cornerRadius: CGFloat { density == .strip || density == .compact ? 13 : 18 }
@@ -108,23 +104,7 @@ struct QuotaProviderPanel: View {
         }
     }
 
-    private var statusText: String {
-        if data.source == .preview { return "Demo" }
-        if data.status == .stale {
-            return UsageFormatting.cacheAge(data.measuredAt) ?? "Stale"
-        }
-        return UsageFormatting.status(data.status)
-    }
-
-    private var statusIcon: String {
-        switch data.status {
-        case .ready: "checkmark.circle.fill"
-        case .stale: "clock.badge.exclamationmark.fill"
-        case .unauthenticated: "person.crop.circle.badge.exclamationmark"
-        case .unavailable: "minus.circle.fill"
-        case .error: "exclamationmark.triangle.fill"
-        }
-    }
+    private var status: UsageStatusPresentation { UsageStatusPresentation(data, relativeTo: referenceDate) }
 
     var body: some View {
         Group {
@@ -142,13 +122,15 @@ struct QuotaProviderPanel: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(provider.accent.opacity(0.20), lineWidth: 1)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(provider.name), \(valueText) remaining, \(detailText), " +
-                "\(UsageFormatting.resetCountdown(quota?.resetAt)), \(statusText)"
+                "\(UsageFormatting.resetCountdown(quota?.resetAt, relativeTo: referenceDate)), \(status.detail)" +
+                (dailyTokens.map { ", " + CodexDailyTokenPresentation($0, relativeTo: referenceDate).accessibilityText } ?? "")
         )
+        .help(status.detail)
     }
 
     private var stripBody: some View {
@@ -170,8 +152,8 @@ struct QuotaProviderPanel: View {
                     .minimumScaleFactor(0.65)
             }
             HStack(spacing: 4) {
-                Image(systemName: statusIcon)
-                Text(data.status == .ready ? detailText : statusText)
+                Image(systemName: status.icon)
+                Text(status.severity == .normal ? detailText : status.label)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
                 Spacer(minLength: 2)
@@ -179,7 +161,8 @@ struct QuotaProviderPanel: View {
                     .frame(width: 42, height: 3)
             }
             .font(.system(size: 7, weight: .semibold, design: .rounded))
-            .foregroundStyle(data.status == .ready ? .white.opacity(0.62) : progressColor)
+            .foregroundStyle(status.widgetColor)
+            dailyTokenLine
         }
     }
 
@@ -195,9 +178,19 @@ struct QuotaProviderPanel: View {
                     .lineLimit(1)
             }
 
-            resetLine
-            QuotaProgressBar(percent: remainingPercent, tint: progressColor)
-                .frame(height: density == .expanded ? 6 : 4)
+            if density == .compact {
+                HStack(spacing: 4) {
+                    resetLine
+                    Spacer(minLength: 0)
+                    QuotaProgressBar(percent: remainingPercent, tint: progressColor)
+                        .frame(width: 30, height: 3)
+                }
+            } else {
+                resetLine
+                QuotaProgressBar(percent: remainingPercent, tint: progressColor)
+                    .frame(height: density == .expanded ? 6 : 4)
+            }
+            dailyTokenLine
         }
     }
 
@@ -211,9 +204,9 @@ struct QuotaProviderPanel: View {
                 .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.88))
             Spacer(minLength: 4)
-            Label(statusText, systemImage: statusIcon)
+            Label(status.label, systemImage: status.icon)
                 .font(.system(size: density == .expanded ? 10 : 8, weight: .semibold, design: .rounded))
-                .foregroundStyle(data.status == .ready ? .white.opacity(0.62) : progressColor)
+                .foregroundStyle(status.widgetColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
@@ -240,19 +233,39 @@ struct QuotaProviderPanel: View {
         HStack(spacing: 5) {
             Image(systemName: "clock")
                 .foregroundStyle(provider.accent.opacity(0.88))
-            Text(UsageFormatting.resetCountdown(quota?.resetAt))
+            Text(UsageFormatting.resetCountdown(quota?.resetAt, relativeTo: referenceDate))
                 .lineLimit(1)
         }
         .font(.system(size: density == .expanded ? 11 : 8, weight: .semibold, design: .rounded))
         .foregroundStyle(.white.opacity(0.70))
     }
 
+    @ViewBuilder
+    private var dailyTokenLine: some View {
+        if let dailyTokens {
+            let presentation = CodexDailyTokenPresentation(dailyTokens, relativeTo: referenceDate)
+            HStack(spacing: 3) {
+                Text("Today")
+                Text("\(presentation.value) tok").fontWeight(.semibold).monospacedDigit()
+                Spacer(minLength: 0)
+                if presentation.status.severity != .normal {
+                    Image(systemName: presentation.status.icon)
+                        .foregroundStyle(presentation.status.widgetColor)
+                    Text(presentation.warningLabel).foregroundStyle(presentation.status.widgetColor)
+                }
+            }
+            .font(.system(size: density == .strip ? 8 : density == .expanded ? 11 : 9, weight: .medium))
+            .foregroundStyle(.white.opacity(0.78))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .help(presentation.status.detail)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(presentation.accessibilityText)
+        }
+    }
+
     private var panelBackground: some ShapeStyle {
-        LinearGradient(
-            colors: [provider.accent.opacity(0.18), provider.gradientEnd.opacity(0.54)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        provider.accent.opacity(0.08)
     }
 
     private func quotaPeriod(windowSeconds: Int?) -> String {
@@ -281,7 +294,6 @@ struct QuotaProgressBar: View {
                     Capsule()
                         .fill(tint)
                         .frame(width: fillWidth(total: proxy.size.width, percent: percent))
-                        .shadow(color: tint.opacity(0.35), radius: 4)
                 } else {
                     Capsule()
                         .fill(.white.opacity(0.16))
@@ -295,5 +307,15 @@ struct QuotaProgressBar: View {
     private func fillWidth(total: CGFloat, percent: Double) -> CGFloat {
         guard percent > 0 else { return 0 }
         return min(total, max(4, total * percent / 100))
+    }
+}
+
+extension UsageStatusPresentation {
+    var widgetColor: Color {
+        switch severity {
+        case .normal: .white.opacity(0.68)
+        case .warning: Color(red: 1.00, green: 0.74, blue: 0.32)
+        case .critical: Color(red: 1.00, green: 0.44, blue: 0.42)
+        }
     }
 }

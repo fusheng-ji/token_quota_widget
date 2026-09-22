@@ -1,8 +1,10 @@
 import Foundation
 
 extension UsageSnapshot {
+    static let previewDate = Date(timeIntervalSince1970: 1_790_078_400)
+
     static let preview: UsageSnapshot = {
-        let now = Date()
+        let now = previewDate
         return UsageSnapshot(
             schemaVersion: Self.currentSchemaVersion,
             generatedAt: now,

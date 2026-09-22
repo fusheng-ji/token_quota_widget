@@ -9,6 +9,7 @@ enum DeepSeekPanelDensity {
 struct DeepSeekUsagePanel: View {
     let data: UsageValue<DeepSeekUsageTotals>
     let density: DeepSeekPanelDensity
+    var referenceDate: Date = .now
 
     private let accent = Color(red: 0.22, green: 0.58, blue: 1.00)
     private var usage: DeepSeekUsageTotals? { data.value }
@@ -17,23 +18,7 @@ struct DeepSeekUsagePanel: View {
     }
     private var cornerRadius: CGFloat { density == .strip ? 13 : 18 }
 
-    private var statusText: String {
-        if data.source == .preview { return "Demo" }
-        if data.status == .stale {
-            return UsageFormatting.cacheAge(data.measuredAt) ?? "Stale"
-        }
-        return UsageFormatting.status(data.status)
-    }
-
-    private var statusIcon: String {
-        switch data.status {
-        case .ready: "checkmark.circle.fill"
-        case .stale: "clock.badge.exclamationmark.fill"
-        case .unauthenticated: "person.crop.circle.badge.exclamationmark"
-        case .unavailable: "minus.circle.fill"
-        case .error: "exclamationmark.triangle.fill"
-        }
-    }
+    private var status: UsageStatusPresentation { UsageStatusPresentation(data, relativeTo: referenceDate) }
 
     var body: some View {
         Group {
@@ -43,24 +28,19 @@ struct DeepSeekUsagePanel: View {
                 standardBody
             }
         }
-        .padding(density == .strip ? 6 : density == .expanded ? 16 : 10)
+        .padding(density == .expanded ? 16 : 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [accent.opacity(0.20), Color(red: 0.07, green: 0.16, blue: 0.38).opacity(0.72)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(accent.opacity(0.08))
         }
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(accent.opacity(0.22), lineWidth: 1)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .help(status.detail)
     }
 
     private var stripBody: some View {
@@ -82,23 +62,23 @@ struct DeepSeekUsagePanel: View {
                     .minimumScaleFactor(0.62)
             }
             HStack(spacing: 4) {
-                Image(systemName: statusIcon)
-                Text(data.status == .ready ? compactSummary : statusText)
+                Image(systemName: status.icon)
+                Text(status.severity == .normal ? compactSummary : status.label)
                     .lineLimit(1)
                     .minimumScaleFactor(0.62)
                 Spacer(minLength: 0)
             }
             .font(.system(size: 7, weight: .semibold, design: .rounded))
-            .foregroundStyle(data.status == .ready ? .white.opacity(0.62) : accent)
+            .foregroundStyle(status.widgetColor)
         }
     }
 
     private var standardBody: some View {
-        VStack(alignment: .leading, spacing: density == .expanded ? 9 : 5) {
+        VStack(alignment: .leading, spacing: density == .expanded ? 9 : 2) {
             header
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(UsageFormatting.money(primaryBalance))
-                    .font(.system(size: density == .expanded ? 40 : 25, weight: .bold, design: .rounded))
+                    .font(.system(size: density == .expanded ? 40 : 20, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -131,9 +111,9 @@ struct DeepSeekUsagePanel: View {
                 .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.88))
             Spacer(minLength: 4)
-            Label(statusText, systemImage: statusIcon)
+            Label(status.label, systemImage: status.icon)
                 .font(.system(size: density == .expanded ? 10 : 8, weight: .semibold, design: .rounded))
-                .foregroundStyle(data.status == .ready ? .white.opacity(0.62) : accent)
+                .foregroundStyle(status.widgetColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -172,6 +152,6 @@ struct DeepSeekUsagePanel: View {
 
     private var accessibilityText: String {
         let value = UsageFormatting.money(primaryBalance)
-        return "DeepSeek, \(value) balance, \(compactSummary), \(statusText)"
+        return "DeepSeek, \(value) balance, \(compactSummary), \(status.detail)"
     }
 }

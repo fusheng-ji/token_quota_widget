@@ -1,40 +1,14 @@
 #!/bin/zsh
 set -euo pipefail
+umask 077
 
 project_dir="${0:A:h:h}"
-user_root="${BEAVERMETER_USER_ROOT_OVERRIDE:-$HOME}"
-app_name="BeaverMeter.app"
-install_dir="$user_root/Applications"
-installed_app="$install_dir/$app_name"
-installed_widget="$installed_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex"
-agent_label="io.github.beavermeter.refresh"
-agent_path="$user_root/Library/LaunchAgents/$agent_label.plist"
-config_dir="$user_root/Library/Application Support/BeaverMeter"
-config_path="$config_dir/config.env"
-snapshot_path="$config_dir/beaver-meter-snapshot.json"
-log_dir="$user_root/Library/Logs/BeaverMeter"
-legacy_app="$user_root/Applications/CodexWeek.app"
-legacy_agent_label="io.github.codexweek.refresh"
-legacy_agent_path="$user_root/Library/LaunchAgents/$legacy_agent_label.plist"
-legacy_config_dir="$user_root/Library/Application Support/CodexWeek"
-legacy_log_dir="$user_root/Library/Logs/CodexWeek"
-migration_script="$project_dir/scripts/migrate_beavermeter_data.sh"
-lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
-
-unregister_other_beavermeter_apps() {
-  local registered_app
-  "$lsregister" -dump 2>/dev/null \
-    | sed -En 's/^[[:space:]]*path:[[:space:]]*(.*BeaverMeter\.app)[[:space:]]+\(0x[0-9A-Fa-f]+\)$/\1/p' \
-    | while IFS= read -r registered_app; do
-        if [[ "$registered_app" != "$installed_app" ]]; then
-          pluginkit -r "$registered_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
-          "$lsregister" -u "$registered_app" >/dev/null 2>&1 || true
-        fi
-      done
-}
+source "$project_dir/scripts/lib/install_common.sh"
+source "$project_dir/scripts/lib/install_transaction.sh"
+bm_initialize
 
 for command_name in xcodegen sqlite3; do
-  if ! command -v "$command_name" >/dev/null 2>&1; then
+  if [[ -z "${BEAVERMETER_SYSTEM_COMMANDS:-}" ]] && ! command -v "$command_name" >/dev/null 2>&1; then
     print -u2 "Missing dependency: $command_name"
     print -u2 "Install prerequisites with: brew install xcodegen"
     exit 1
@@ -42,7 +16,7 @@ for command_name in xcodegen sqlite3; do
 done
 
 developer_dir="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-if [[ ! -x "$developer_dir/usr/bin/xcodebuild" ]]; then
+if [[ -z "${BEAVERMETER_SYSTEM_COMMANDS:-}" && ! -x "$developer_dir/usr/bin/xcodebuild" ]]; then
   print -u2 "Full Xcode is required at /Applications/Xcode.app."
   exit 1
 fi
@@ -80,31 +54,43 @@ default_codex_root="${CODEX_ROOT:-$user_root/.codex}"
 read "codex_root?Codex data directory [$default_codex_root]: "
 codex_root="${codex_root:-$default_codex_root}"
 
-default_remote_host="${CODEX_REMOTE_SSH_HOST:-remote-host}"
-read "remote_codex_host?Remote Codex SSH host [$default_remote_host, - to disable]: "
+# Empty is an explicit disabled setting, including on subsequent upgrades.
+default_remote_host="${CODEX_REMOTE_SSH_HOST:-}"
+read "remote_codex_host?Remote Codex SSH host [${default_remote_host:-disabled}, - to disable]: "
 remote_codex_host="${remote_codex_host:-$default_remote_host}"
-if [[ "$remote_codex_host" == "-" ]]; then
-  remote_codex_host=""
-fi
-if [[ -n "$remote_codex_host" && ! "$remote_codex_host" =~ '^[A-Za-z0-9._@-]+$' ]]; then
+[[ "$remote_codex_host" != "-" ]] || remote_codex_host=""
+if [[ -n "$remote_codex_host" && ( "$remote_codex_host" == -* || ! "$remote_codex_host" =~ '^[A-Za-z0-9._@-]+$' ) ]]; then
   print -u2 "Remote Codex SSH host contains unsupported characters."
   exit 1
 fi
 
-default_remote_root="${CODEX_REMOTE_ROOT:-/home/user/.cursor-server/codex-home}"
-read "remote_codex_root?Remote Codex data directory [$default_remote_root]: "
-remote_codex_root="${remote_codex_root:-$default_remote_root}"
-
-default_remote_python="${CODEX_REMOTE_PYTHON:-/home/user/miniconda3/bin/python3}"
-read "remote_codex_python?Remote Python path [$default_remote_python]: "
-remote_codex_python="${remote_codex_python:-$default_remote_python}"
+# Retain saved paths while disabled so enabling the source again is convenient.
+remote_codex_root="${CODEX_REMOTE_ROOT:-}"
+remote_codex_python="${CODEX_REMOTE_PYTHON:-}"
+if [[ -n "$remote_codex_host" ]]; then
+  read "entered_remote_root?Remote Codex data directory [$remote_codex_root]: "
+  remote_codex_root="${entered_remote_root:-$remote_codex_root}"
+  read "entered_remote_python?Remote Python path [$remote_codex_python]: "
+  remote_codex_python="${entered_remote_python:-$remote_codex_python}"
+  if [[ "$remote_codex_root" != /* || "$remote_codex_python" != /* || "$remote_codex_root" == *$'\n'* || "$remote_codex_python" == *$'\n'* ]]; then
+    print -u2 "An enabled remote source requires absolute Codex and Python paths."
+    exit 1
+  fi
+fi
 
 default_cursor_state_db="${CURSOR_STATE_DB:-$user_root/Library/Application Support/Cursor/User/globalStorage/state.vscdb}"
 read "cursor_state_db?Cursor account database [$default_cursor_state_db]: "
 cursor_state_db="${cursor_state_db:-$default_cursor_state_db}"
 
-read "refresh_minutes?Refresh interval in minutes [5]: "
-refresh_minutes="${refresh_minutes:-5}"
+default_refresh_minutes="${BEAVERMETER_REFRESH_MINUTES:-5}"
+if [[ -f "$agent_path" ]]; then
+  prior_interval="$(bm_run plistbuddy -c 'Print :StartInterval' "$agent_path" 2>/dev/null || true)"
+  if [[ "$prior_interval" == <-> ]] && (( prior_interval >= 300 && prior_interval <= 86400 && prior_interval % 60 == 0 )); then
+    default_refresh_minutes=$((prior_interval / 60))
+  fi
+fi
+read "refresh_minutes?Refresh interval in minutes [$default_refresh_minutes]: "
+refresh_minutes="${refresh_minutes:-$default_refresh_minutes}"
 if [[ ! "$refresh_minutes" =~ '^[0-9]+$' ]] || (( refresh_minutes < 5 || refresh_minutes > 1440 )); then
   print -u2 "Refresh interval must be between 5 and 1440 minutes."
   exit 1
@@ -115,59 +101,23 @@ export BEAVERMETER_BUNDLE_PREFIX="$bundle_prefix"
 
 signing_overrides=()
 if [[ -z "$team_id" ]]; then
-  signing_overrides=(
-    CODE_SIGN_STYLE=Manual
-    CODE_SIGN_IDENTITY=-
-    DEVELOPMENT_TEAM=
-  )
+  signing_overrides=(CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=)
   print "No Apple signing identity selected; using local ad-hoc signing."
 fi
 
-derived_data="$(mktemp -d "${TMPDIR:-/tmp}/beavermeter-build.XXXXXX")"
-rollback_dir="$(mktemp -d "${TMPDIR:-/tmp}/beavermeter-rollback.XXXXXX")"
+# Reusing DerivedData keeps dependency builds incremental. Never unregister this
+# copy after the installed bundle has been registered: WidgetKit shares its ID.
+derived_data="${BEAVERMETER_DERIVED_DATA:-$project_dir/.build/install}"
+derived_data="${derived_data:A}"
 built_app="$derived_data/Build/Products/Release/$app_name"
-prior_app_backup="$rollback_dir/$app_name"
-prior_agent_backup="$rollback_dir/$agent_label.plist"
-installed_new_app=0
-install_committed=0
-
-cleanup() {
-  local exit_code=$?
-  # On a successful install, unregister_other_beavermeter_apps has already
-  # removed the DerivedData copy before the installed bundle is registered.
-  # Removing that same bundle ID again here makes WidgetKit invalidate the
-  # freshly registered extension and can leave its desktop timeline broken.
-  if (( install_committed == 0 )) && [[ -d "$built_app" ]]; then
-    "$lsregister" -u "$built_app" >/dev/null 2>&1 || true
-    pluginkit -r "$built_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
-  fi
-  if (( exit_code != 0 && install_committed == 0 )); then
-    print -u2 "BeaverMeter installation failed; restoring the previous installation."
-    launchctl bootout "gui/$(id -u)/$agent_label" >/dev/null 2>&1 || true
-    if (( installed_new_app == 1 )); then
-      rm -rf "$installed_app"
-    fi
-    if [[ -d "$prior_app_backup" ]]; then
-      mv "$prior_app_backup" "$installed_app"
-      "$lsregister" -f -R -trusted "$installed_app" >/dev/null 2>&1 || true
-      pluginkit -a "$installed_widget" >/dev/null 2>&1 || true
-    fi
-    if [[ -f "$prior_agent_backup" ]]; then
-      mv "$prior_agent_backup" "$agent_path"
-      launchctl bootstrap "gui/$(id -u)" "$agent_path" >/dev/null 2>&1 || true
-    elif [[ -f "$legacy_agent_path" ]]; then
-      launchctl bootstrap "gui/$(id -u)" "$legacy_agent_path" >/dev/null 2>&1 || true
-    fi
-  fi
-  [[ -d "$derived_data" ]] && rm -rf "$derived_data"
-  [[ -d "$rollback_dir" ]] && rm -rf "$rollback_dir"
-  return "$exit_code"
-}
-trap cleanup EXIT
-
+if [[ "$built_app" == "$installed_app" ]]; then
+  print -u2 "Build output must be separate from the installed application."
+  exit 1
+fi
+mkdir -p "$derived_data"
 cd "$project_dir"
-xcodegen generate
-DEVELOPER_DIR="$developer_dir" xcodebuild \
+bm_run xcodegen generate
+DEVELOPER_DIR="$developer_dir" bm_run xcodebuild \
   -project BeaverMeter.xcodeproj \
   -scheme BeaverMeter \
   -configuration Release \
@@ -177,47 +127,29 @@ DEVELOPER_DIR="$developer_dir" xcodebuild \
   ARCHS="$(uname -m)" \
   "${signing_overrides[@]}" \
   build
+bm_run codesign --verify --deep --strict "$built_app"
 
-launchctl bootout "gui/$(id -u)/$agent_label" >/dev/null 2>&1 || true
-launchctl bootout "gui/$(id -u)/$legacy_agent_label" >/dev/null 2>&1 || true
-if [[ -d "$installed_widget" ]]; then
-  pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
-fi
-if [[ -d "$installed_app" ]]; then
-  "$lsregister" -u "$installed_app" >/dev/null 2>&1 || true
-fi
-killall chronod >/dev/null 2>&1 || true
-for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWidgetExtension; do
-  pkill -x "$process_name" >/dev/null 2>&1 || true
-done
-for process_name in BeaverMeter BeaverMeterWidgetExtension CodexWeek CodexWeekWidgetExtension; do
-  for _ in {1..20}; do
-    pgrep -x "$process_name" >/dev/null 2>&1 || break
-    sleep 0.1
-  done
-  if pgrep -x "$process_name" >/dev/null 2>&1; then
-    pkill -KILL -x "$process_name" >/dev/null 2>&1 || true
-    sleep 0.2
-    if pgrep -x "$process_name" >/dev/null 2>&1; then
-      print -u2 "Could not stop $process_name. Quit it manually and run the installer again."
-      exit 1
-    fi
-  fi
-done
+# No live services, registrations or settings are changed until all backups
+# exist. Build/preflight failures therefore leave the running version alone.
+rollback_dir=""
+transaction_started=0
+install_committed=0
+trap bm_install_cleanup ZERR EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+bm_prepare_transaction
+transaction_started=1
+bm_run launchctl bootout "$launch_domain/$agent_label" >/dev/null 2>&1 || true
+bm_run launchctl bootout "$launch_domain/$legacy_agent_label" >/dev/null 2>&1 || true
+bm_stop_applications
 
-mkdir -p "$install_dir" "$user_root/Library/LaunchAgents" "$user_root/.Trash"
-if [[ -d "$installed_app" ]]; then
-  mv "$installed_app" "$prior_app_backup"
-fi
-if [[ -f "$agent_path" ]]; then
-  mv "$agent_path" "$prior_agent_backup"
-fi
-
-BEAVERMETER_USER_ROOT_OVERRIDE="$user_root" zsh "$migration_script"
+mkdir -p "$install_dir" "$user_root/Library/LaunchAgents"
+rm -rf "$installed_app"
+rm -f "$agent_path"
+BEAVERMETER_USER_ROOT_OVERRIDE="$user_root" zsh "$project_dir/scripts/migrate_beavermeter_data.sh"
 mkdir -p "$config_dir" "$log_dir"
 chmod 700 "$config_dir"
-ditto "$built_app" "$installed_app"
-installed_new_app=1
+/usr/bin/ditto "$built_app" "$installed_app"
 
 {
   printf 'CODEX_ROOT=%q\n' "$codex_root"
@@ -225,52 +157,46 @@ installed_new_app=1
   printf 'CODEX_REMOTE_ROOT=%q\n' "$remote_codex_root"
   printf 'CODEX_REMOTE_PYTHON=%q\n' "$remote_codex_python"
   printf 'CURSOR_STATE_DB=%q\n' "$cursor_state_db"
+  printf 'BEAVERMETER_DEVELOPMENT_TEAM=%q\n' "$team_id"
+  printf 'BEAVERMETER_BUNDLE_PREFIX=%q\n' "$bundle_prefix"
+  printf 'BEAVERMETER_REFRESH_MINUTES=%q\n' "$refresh_minutes"
 } > "$config_path"
 chmod 600 "$config_path"
 
-/usr/libexec/PlistBuddy -c "Add :Label string $agent_label" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :ProgramArguments array" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :ProgramArguments:0 string /bin/zsh" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :ProgramArguments:1 string $installed_app/Contents/Resources/collect_beaver_meter.sh" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :StartInterval integer $((refresh_minutes * 60))" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :StandardOutPath string $log_dir/refresh.out.log" "$agent_path"
-/usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $log_dir/refresh.err.log" "$agent_path"
+bm_run plistbuddy -c "Add :Label string $agent_label" "$agent_path"
+bm_run plistbuddy -c "Add :ProgramArguments array" "$agent_path"
+bm_run plistbuddy -c "Add :ProgramArguments:0 string /bin/zsh" "$agent_path"
+bm_run plistbuddy -c "Add :ProgramArguments:1 string $installed_app/Contents/Resources/collect_beaver_meter.sh" "$agent_path"
+bm_run plistbuddy -c "Add :RunAtLoad bool true" "$agent_path"
+bm_run plistbuddy -c "Add :StartInterval integer $((refresh_minutes * 60))" "$agent_path"
+bm_run plistbuddy -c "Add :StandardOutPath string $log_dir/refresh.out.log" "$agent_path"
+bm_run plistbuddy -c "Add :StandardErrorPath string $log_dir/refresh.err.log" "$agent_path"
 
-legacy_widget="$legacy_app/Contents/PlugIns/CodexWeekWidgetExtension.appex"
-if [[ -d "$legacy_widget" ]]; then
-  pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
-fi
-unregister_other_beavermeter_apps
-"$lsregister" -f -R -trusted "$installed_app"
-pluginkit -a "$installed_widget"
-"$lsregister" -gc >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$(id -u)" "$agent_path"
+bm_unregister_app "$built_app"
+bm_unregister_other_apps
+bm_register_app "$installed_app"
 "$installed_app/Contents/Resources/collect_beaver_meter.sh" "$snapshot_path" >/dev/null
-
 schema_version="$(/usr/bin/plutil -extract schemaVersion raw -o - "$snapshot_path" 2>/dev/null || true)"
 if [[ "$schema_version" != "5" ]]; then
   print -u2 "BeaverMeter did not produce a schema v5 snapshot."
   exit 1
 fi
-codesign --verify --deep --strict "$installed_app"
-launchctl kickstart -k "gui/$(id -u)/$agent_label"
-# WidgetKit can retain timelines and extension processes from the previous
-# bundle build. The extension is stopped before replacement above; restart its
-# user agents here after registering the new bundle stub.
-killall chronod >/dev/null 2>&1 || true
-killall NotificationCenter >/dev/null 2>&1 || true
-open "$installed_app"
+bm_run codesign --verify --deep --strict "$installed_app"
+bm_run launchctl bootstrap "$launch_domain" "$agent_path"
+bm_refresh_widget_services
+bm_open_app "$installed_app"
 install_committed=1
 
-if [[ -d "$legacy_app" ]]; then
-  "$lsregister" -u "$legacy_app" >/dev/null 2>&1 || true
-fi
+# Legacy files stay untouched until the new installation has been verified.
 rm -rf "$legacy_app" "$legacy_config_dir" "$legacy_log_dir"
 rm -f "$legacy_agent_path"
 
 print
 print "Installed: $installed_app"
 print "Refresh interval: $refresh_minutes minutes"
-print "CodexWeek data and credentials were migrated to BeaverMeter."
-print "The Widget has a new identity: remove the old Widget and add BeaverMeter again."
+print "Build cache: $derived_data"
+if [[ -d "$rollback_dir/app" ]]; then
+  print "BeaverMeter and its Widget were updated."
+else
+  print "Add BeaverMeter from the macOS Widget gallery."
+fi

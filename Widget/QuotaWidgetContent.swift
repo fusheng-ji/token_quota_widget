@@ -4,6 +4,7 @@ import WidgetKit
 struct QuotaWidgetContent: View {
     let snapshot: UsageSnapshot
     let family: WidgetFamily
+    var referenceDate: Date = .now
 
     var body: some View {
         layout
@@ -16,6 +17,7 @@ struct QuotaWidgetContent: View {
         case .systemSmall:
             VStack(spacing: 5) {
                 panel(.codex, density: .strip)
+                    .frame(height: 56)
                 panel(.cursor, density: .strip)
                 deepSeekPanel(density: .strip)
             }
@@ -58,27 +60,23 @@ struct QuotaWidgetContent: View {
         QuotaProviderPanel(
             provider: provider,
             data: provider == .codex ? snapshot.codexQuota : snapshot.cursorQuota,
-            density: density
+            density: density,
+            dailyTokens: provider == .codex ? snapshot.codexTokens : nil,
+            referenceDate: referenceDate
         )
     }
 
     private func deepSeekPanel(density: DeepSeekPanelDensity) -> some View {
         DeepSeekUsagePanel(
             data: snapshot.deepseekUsage,
-            density: density
+            density: density,
+            referenceDate: referenceDate
         )
     }
 }
 
 struct QuotaWidgetBackground: View {
     var body: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.035, green: 0.04, blue: 0.07),
-                Color(red: 0.08, green: 0.07, blue: 0.13)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        Color(red: 0.065, green: 0.07, blue: 0.085)
     }
 }

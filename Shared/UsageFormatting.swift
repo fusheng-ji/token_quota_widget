@@ -3,6 +3,9 @@ import Foundation
 enum UsageFormatting {
     static func tokens(_ value: Int?) -> String {
         guard let value else { return "—" }
+        if value >= 1_000_000_000 {
+            return String(format: value >= 10_000_000_000 ? "%.0fB" : "%.1fB", Double(value) / 1_000_000_000)
+        }
         if value >= 1_000_000 {
             return String(format: value >= 10_000_000 ? "%.0fM" : "%.1fM", Double(value) / 1_000_000)
         }
@@ -55,11 +58,11 @@ enum UsageFormatting {
         value.map { min(max($0, 0), 100) }
     }
 
-    static func relativeAge(_ date: Date?) -> String {
+    static func relativeAge(_ date: Date?, relativeTo now: Date = .now) -> String {
         guard let date else { return "never updated" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: .now)
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     static func reset(_ date: Date?) -> String? {

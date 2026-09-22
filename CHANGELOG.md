@@ -6,6 +6,41 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-09-23
+
+### Added
+
+- Codex's daily token total now appears alongside its remaining allowance in
+  every Widget size, with its own freshness and failure status.
+- Added isolated collector, remote scanner, subprocess and installer rollback
+  tests, together with a single development test entry point.
+
+### Fixed
+
+- Full and 45-second Codex refreshes now use the same aggregation and fallback
+  rules. Local legacy-format usage is resolved before unique remote responses
+  are added, preventing mixed-format totals from being understated.
+- Local scanning includes sessions created more than 30 days ago. Unreadable
+  local or remote files are reported as incomplete instead of silently clearing
+  valid same-day usage; one failed source does not cancel the other.
+- SSH configuration stays disabled across upgrades when explicitly disabled.
+  Fresh installs no longer default to a developer's private SSH host or paths.
+- Failed builds leave the installed app and refresh agent running. Failures
+  during replacement restore the app, configuration, data and agent together.
+- Collector subprocesses have bounded execution and file-backed input/output,
+  preventing large requests or error output from blocking a refresh.
+- Preview rendering uses fixed demo data without reading live snapshots or
+  starting background collectors. Fixture tests do not use real account sessions.
+
+### Changed
+
+- Consolidated private atomic file writes, Codex cache/date handling, app refresh
+  scheduling, status presentation and Widget registration helpers.
+- Refined menu spacing, numeric alignment, accessibility labels and inline error
+  presentation while retaining provider colors and ordering.
+- Kept the schema v5 snapshot and existing command-line/environment interfaces;
+  compatible same-day scan caches remain usable during upgrades.
+
 ## [5.0.5] - 2026-09-21
 
 ### Fixed

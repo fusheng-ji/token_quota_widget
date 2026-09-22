@@ -1,5 +1,3 @@
-import CryptoKit
-import Darwin
 import Foundation
 
 enum CodexRemoteUsageCollector {
@@ -30,6 +28,8 @@ enum CodexRemoteUsageCollector {
     }
 
     private struct RemoteResponse: Decodable {
+        let complete: Bool
+        let failedFiles: [String]
         let activeFiles: [String]
         let files: [String: FileDelta]
     }
@@ -66,15 +66,18 @@ enum CodexRemoteUsageCollector {
                 message: nil
             )
         }
-        let root = nonempty(environment["CODEX_REMOTE_ROOT"])
-            ?? "/home/user/.cursor-server/codex-home"
-        let python = nonempty(environment["CODEX_REMOTE_PYTHON"])
-            ?? "/home/user/miniconda3/bin/python3"
-        let sourceHash = hash("\(host)\u{0}\(root)\u{0}\(python)")
-        let dayStart = calendar.startOfDay(for: now)
-        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
-            return failed(cache: nil, message: "Remote Codex day boundary could not be calculated.")
+        guard let root = nonempty(environment["CODEX_REMOTE_ROOT"]),
+              let python = nonempty(environment["CODEX_REMOTE_PYTHON"]),
+              let window = try? CodexDayWindow(now: now, calendar: calendar)
+        else {
+            return Result(
+                configured: true, complete: false, changed: false,
+                usageByResponseHash: [:], sessionHashes: [],
+                message: "Remote Codex configuration is incomplete; specify a root and Python executable."
+            )
         }
+        let sourceHash = hash("\(host)\u{0}\(root)\u{0}\(python)")
+        let dayStart = window.start
 
         let loaded = loadCache(from: cacheURL)
         let cacheIsCurrent = loaded?.schemaVersion == cacheSchemaVersion
@@ -101,38 +104,42 @@ enum CodexRemoteUsageCollector {
                     host: host,
                     root: root,
                     python: python,
-                    dayStart: dayStart,
-                    dayEnd: dayEnd,
+                    window: window,
                     cache: cache,
                     environment: environment
                 )
             }
             let response = try JSONDecoder().decode(RemoteResponse.self, from: responseData)
             var changed = resetCache
+            var cacheChanged = resetCache
             let activeFiles = Set(response.activeFiles)
-            let removedFiles = Set(cache.files.keys).subtracting(activeFiles)
-            if !removedFiles.isEmpty {
-                changed = true
-                for identity in removedFiles { cache.files.removeValue(forKey: identity) }
-            }
+            var complete = response.complete && response.failedFiles.isEmpty
+            // Counts already observed today remain valid if logs are removed,
+            // archived or temporarily inaccessible. Day/source changes reset them.
             for (identity, delta) in response.files {
-                guard activeFiles.contains(identity), delta.offset >= 0 else { continue }
-                var state = delta.reset ? .empty : (cache.files[identity] ?? .empty)
-                if delta.reset || state.offset != delta.offset || !delta.records.isEmpty {
-                    changed = true
+                guard activeFiles.contains(identity), delta.offset >= 0 else {
+                    complete = false
+                    continue
                 }
-                if delta.reset { state.records.removeAll() }
+                var state = delta.reset ? .empty : (cache.files[identity] ?? .empty)
+                guard delta.reset || delta.offset >= state.offset else {
+                    complete = false
+                    continue
+                }
+                cacheChanged = cacheChanged || state.offset != delta.offset
+                cacheChanged = cacheChanged || delta.reset
                 for record in delta.records {
-                    guard record.timestamp >= dayStart.timeIntervalSince1970,
-                          record.timestamp < dayEnd.timeIntervalSince1970,
+                    guard window.contains(Date(timeIntervalSince1970: record.timestamp)),
                           isSHA256(record.responseHash),
                           isSHA256(record.sessionHash),
                           record.inputTokens >= 0,
                           record.cachedInputTokens >= 0,
                           record.outputTokens >= 0,
                           record.reasoningTokens >= 0
-                    else { continue }
+                    else { complete = false; continue }
                     if state.records[record.responseHash] == nil {
+                        changed = true
+                        cacheChanged = true
                         state.records[record.responseHash] = .init(
                             inputTokens: record.inputTokens,
                             cachedInputTokens: record.cachedInputTokens,
@@ -145,15 +152,15 @@ enum CodexRemoteUsageCollector {
                 state.offset = delta.offset
                 cache.files[identity] = state
             }
-            try writeCache(cache, to: cacheURL)
+            if cacheChanged { try AtomicFileWriter.writeJSON(cache, to: cacheURL) }
             let records = mergedRecords(in: cache)
             return Result(
                 configured: true,
-                complete: true,
+                complete: complete,
                 changed: changed,
                 usageByResponseHash: records,
                 sessionHashes: Set(records.values.map(\.sessionHash)),
-                message: nil
+                message: complete ? nil : "Some remote Codex records could not be refreshed; today's total includes cached remote usage."
             )
         } catch {
             let records = mergedRecords(in: cache)
@@ -174,8 +181,7 @@ enum CodexRemoteUsageCollector {
         host: String,
         root: String,
         python: String,
-        dayStart: Date,
-        dayEnd: Date,
+        window: CodexDayWindow,
         cache: Cache,
         environment: [String: String]
     ) throws -> Data {
@@ -190,61 +196,28 @@ enum CodexRemoteUsageCollector {
         let code = "import base64;exec(base64.b64decode(\"\(scriptData.base64EncodedString())\"))"
         let command = [
             shellQuote(python), "-c", shellQuote(code), shellQuote(root),
-            String(dayStart.timeIntervalSince1970), String(dayEnd.timeIntervalSince1970),
+            String(window.start.timeIntervalSince1970), String(window.end.timeIntervalSince1970),
+            String(window.cutoff.timeIntervalSince1970),
         ].joined(separator: " ")
         let request = try JSONEncoder().encode([
             "files": cache.files.mapValues(\.offset),
         ])
         let ssh = nonempty(environment["BEAVERMETER_SSH"]) ?? "/usr/bin/ssh"
-        let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("beavermeter-remote-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: temporaryDirectory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
+        let result = try SubprocessRunner.run(
+            executable: URL(fileURLWithPath: ssh),
+            arguments: [
+                "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+                "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
+                "--", host, command,
+            ],
+            standardInput: request,
+            timeout: timeout,
+            environment: environment
         )
-        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
-        let outputURL = temporaryDirectory.appendingPathComponent("output.json")
-        let errorURL = temporaryDirectory.appendingPathComponent("error.txt")
-        FileManager.default.createFile(atPath: outputURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        FileManager.default.createFile(atPath: errorURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        let outputHandle = try FileHandle(forWritingTo: outputURL)
-        let errorHandle = try FileHandle(forWritingTo: errorURL)
-        defer {
-            try? outputHandle.close()
-            try? errorHandle.close()
-        }
-
-        let process = Process()
-        let input = Pipe()
-        process.executableURL = URL(fileURLWithPath: ssh)
-        process.arguments = [
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=8",
-            "-o", "ServerAliveInterval=5",
-            "-o", "ServerAliveCountMax=2",
-            "--", host, command,
-        ]
-        process.standardInput = input
-        process.standardOutput = outputHandle
-        process.standardError = errorHandle
-        try process.run()
-        input.fileHandleForWriting.write(request)
-        try input.fileHandleForWriting.close()
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline { usleep(50_000) }
-        if process.isRunning {
-            process.terminate()
-            let terminationDeadline = Date().addingTimeInterval(1)
-            while process.isRunning, Date() < terminationDeadline { usleep(50_000) }
-            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
+        guard result.status == 0, !result.timedOut, !result.cancelled else {
             throw CocoaError(.fileReadUnknown)
         }
-        guard process.terminationStatus == 0 else { throw CocoaError(.fileReadUnknown) }
-        try outputHandle.synchronize()
-        return try Data(contentsOf: outputURL)
+        return result.standardOutput
     }
 
     private static func resolvedScriptURL(environment: [String: String]) -> URL? {
@@ -264,53 +237,12 @@ enum CodexRemoteUsageCollector {
         return records
     }
 
-    private static func failed(cache: Cache?, message: String) -> Result {
-        let records = cache.map(mergedRecords) ?? [:]
-        return Result(
-            configured: true,
-            complete: false,
-            changed: false,
-            usageByResponseHash: records,
-            sessionHashes: Set(records.values.map(\.sessionHash)),
-            message: message
-        )
-    }
-
     private static func loadCache(from url: URL) -> Cache? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(Cache.self, from: data)
-    }
-
-    private static func writeCache(_ cache: Cache, to url: URL) throws {
-        let manager = FileManager.default
-        let directory = url.deletingLastPathComponent()
-        try manager.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(cache)
-        let temporary = directory.appendingPathComponent(".codex-remote-\(UUID().uuidString).tmp")
-        try data.write(to: temporary, options: .withoutOverwriting)
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
-        guard Darwin.rename(temporary.path, url.path) == 0 else {
-            let code = errno
-            try? manager.removeItem(at: temporary)
-            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
-        }
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        CodexUsageSupport.load(Cache.self, from: url)
     }
 
     private static func nonempty(_ value: String?) -> String? {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return nil
-        }
-        return value
+        CodexUsageSupport.nonempty(value)
     }
 
     private static func isSafeHost(_ host: String) -> Bool {
@@ -328,6 +260,6 @@ enum CodexRemoteUsageCollector {
     }
 
     private static func hash(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        CodexUsageSupport.hash(value)
     }
 }

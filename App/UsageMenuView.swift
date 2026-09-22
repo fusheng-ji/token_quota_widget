@@ -7,6 +7,9 @@ struct UsageMenuView: View {
     var scrollsContent = true
     var updatedDescriptionOverride: String?
     var viewHeight: CGFloat = 700
+    var referenceDate: Date?
+    var refreshErrorOverride: String?
+    private var presentationDate: Date { referenceDate ?? .now }
     private let timer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -16,6 +19,15 @@ struct UsageMenuView: View {
             content
             Divider()
             quotaFooter
+            if let error = refreshErrorOverride ?? store.refreshError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+            }
             Divider()
             actions
         }
@@ -38,7 +50,7 @@ struct UsageMenuView: View {
     }
 
     private var sections: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 14) {
             codexSection
             Divider()
             cursorSection
@@ -57,7 +69,7 @@ struct UsageMenuView: View {
                 Text(
                     store.isRefreshing
                         ? "Refreshing…"
-                        : "Updated \(updatedDescriptionOverride ?? UsageFormatting.relativeAge(store.snapshot.generatedAt))"
+                        : "Updated \(updatedDescriptionOverride ?? UsageFormatting.relativeAge(store.snapshot.generatedAt, relativeTo: presentationDate))"
                 )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -69,24 +81,26 @@ struct UsageMenuView: View {
                 Button { store.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain)
                     .help("Refresh now")
+                    .accessibilityLabel("Refresh usage now")
             }
         }
         .padding(14)
     }
 
+    private var dailyCodexTokens: UsageValue<CodexTokenTotals> {
+        CodexDailyTokenPresentation(store.snapshot.codexTokens, relativeTo: presentationDate).data
+    }
+
     private var codexSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Codex today", systemImage: "sparkles")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.teal)
-                Spacer()
-                StatusPill(value: store.snapshot.codexTokens)
-            }
-            if let tokens = store.snapshot.codexTokens.value {
+        VStack(alignment: .leading, spacing: 8) {
+            UsageSectionHeader(title: "Codex today", systemImage: "sparkles", tint: .teal,
+                               value: dailyCodexTokens, referenceDate: presentationDate)
+            if let tokens = dailyCodexTokens.value {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(UsageFormatting.tokens(tokens.totalTokens))
                         .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .accessibilityLabel("\(tokens.totalTokens.formatted()) tokens today")
                     Text("tokens")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -95,32 +109,28 @@ struct UsageMenuView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                HStack(spacing: 18) {
+                HStack(spacing: 10) {
                     TokenMetric(label: "Input", value: tokens.inputTokens)
                     TokenMetric(label: "Cached", value: tokens.cachedInputTokens)
                     TokenMetric(label: "Output", value: tokens.outputTokens)
                     TokenMetric(label: "Reasoning", value: tokens.reasoningTokens)
                 }
+                SectionMessage(message: dailyCodexTokens.message, status: dailyCodexTokens.status)
             } else {
-                EmptyState(message: store.snapshot.codexTokens.message ?? "No Codex token data yet.")
+                EmptyState(message: dailyCodexTokens.message ?? "No Codex token data yet.")
             }
-            SectionMessage(message: store.snapshot.codexTokens.message, status: store.snapshot.codexTokens.status)
         }
     }
 
     private var cursorSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Cursor today", systemImage: "cursorarrow.rays")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.indigo)
-                Spacer()
-                StatusPill(value: store.snapshot.cursorCosts)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            UsageSectionHeader(title: "Cursor today", systemImage: "cursorarrow.rays", tint: .indigo,
+                               value: store.snapshot.cursorCosts, referenceDate: presentationDate)
             if let costs = store.snapshot.cursorCosts.value {
                 HStack(alignment: .firstTextBaseline) {
                     Text(UsageFormatting.usd(costs.todayCostUSD, minimumDigits: 2, maximumDigits: 4))
                         .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
                     Text("actual charge")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -142,22 +152,17 @@ struct UsageMenuView: View {
                         }
                     }
                 }
+                SectionMessage(message: store.snapshot.cursorCosts.message, status: store.snapshot.cursorCosts.status)
             } else {
                 EmptyState(message: store.snapshot.cursorCosts.message ?? "No Cursor cost data yet.")
             }
-            SectionMessage(message: store.snapshot.cursorCosts.message, status: store.snapshot.cursorCosts.status)
         }
     }
 
     private var deepseekSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("DeepSeek this month", systemImage: "waveform.path.ecg.rectangle")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.blue)
-                Spacer()
-                StatusPill(value: store.snapshot.deepseekUsage)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            UsageSectionHeader(title: "DeepSeek this month", systemImage: "waveform.path.ecg.rectangle", tint: .blue,
+                               value: store.snapshot.deepseekUsage, referenceDate: presentationDate)
 
             if let usage = store.snapshot.deepseekUsage.value {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -203,10 +208,9 @@ struct UsageMenuView: View {
             }
 
             HStack {
-                SectionMessage(
-                    message: store.snapshot.deepseekUsage.message,
-                    status: store.snapshot.deepseekUsage.status
-                )
+                if store.snapshot.deepseekUsage.value != nil {
+                    SectionMessage(message: store.snapshot.deepseekUsage.message, status: store.snapshot.deepseekUsage.status)
+                }
                 Spacer()
                 if store.deepSeekConnectionState == .loadingUsage {
                     Button("Loading…") {}
@@ -248,9 +252,9 @@ struct UsageMenuView: View {
 
     private var quotaFooter: some View {
         HStack(spacing: 12) {
-            QuotaLabel(systemImage: "cursorarrow", tint: .indigo, value: store.snapshot.cursorQuota)
+            QuotaLabel(systemImage: "cursorarrow", tint: .indigo, value: store.snapshot.cursorQuota, referenceDate: presentationDate)
             Divider().frame(height: 28)
-            QuotaLabel(systemImage: "sparkles", tint: .teal, value: store.snapshot.codexQuota)
+            QuotaLabel(systemImage: "sparkles", tint: .teal, value: store.snapshot.codexQuota, referenceDate: presentationDate)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -258,7 +262,7 @@ struct UsageMenuView: View {
 
     private var actions: some View {
         HStack {
-            Label("Credentials stay local · snapshots contain no tokens", systemImage: "lock.fill")
+            Label("Credentials stay local · snapshots contain no credentials", systemImage: "lock.fill")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -267,11 +271,6 @@ struct UsageMenuView: View {
                 .font(.caption)
         }
         .padding(12)
-        .overlay(alignment: .topLeading) {
-            if let error = store.refreshError {
-                Text(error).font(.caption2).foregroundStyle(.red).offset(y: -22)
-            }
-        }
     }
 }
 
@@ -280,6 +279,7 @@ struct UsageMenuView: View {
         store: UsageStore(snapshot: .preview, observesSnapshotChanges: false),
         automaticRefresh: false,
         scrollsContent: false,
-        updatedDescriptionOverride: "from demo data"
+        updatedDescriptionOverride: "from demo data",
+        referenceDate: UsageSnapshot.previewDate
     )
 }

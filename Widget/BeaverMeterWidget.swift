@@ -8,11 +8,12 @@ struct BeaverMeterEntry: TimelineEntry {
 
 struct BeaverMeterProvider: TimelineProvider {
     func placeholder(in context: Context) -> BeaverMeterEntry {
-        BeaverMeterEntry(date: .now, snapshot: .preview)
+        BeaverMeterEntry(date: UsageSnapshot.previewDate, snapshot: .preview)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (BeaverMeterEntry) -> Void) {
-        completion(BeaverMeterEntry(date: .now, snapshot: context.isPreview ? .preview : .load()))
+        completion(BeaverMeterEntry(date: context.isPreview ? UsageSnapshot.previewDate : .now,
+                                   snapshot: context.isPreview ? .preview : .load()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BeaverMeterEntry>) -> Void) {

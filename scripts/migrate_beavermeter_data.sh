@@ -1,11 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
+umask 077
 
-user_root="${BEAVERMETER_USER_ROOT_OVERRIDE:-$HOME}"
-legacy_config_dir="$user_root/Library/Application Support/CodexWeek"
-config_dir="$user_root/Library/Application Support/BeaverMeter"
-legacy_log_dir="$user_root/Library/Logs/CodexWeek"
-log_dir="$user_root/Library/Logs/BeaverMeter"
+source "${0:A:h}/lib/install_common.sh"
+bm_initialize
 
 mkdir -p "$config_dir" "$log_dir"
 chmod 700 "$config_dir"
@@ -16,6 +14,7 @@ migrate_private_file() {
   local description="$3"
 
   if [[ -e "$destination_path" ]]; then
+    chmod 600 "$destination_path"
     print "Keeping existing BeaverMeter $description."
     return
   fi
@@ -32,6 +31,7 @@ migrate_private_file "$legacy_config_dir/deepseek-platform-token" "$config_dir/d
 legacy_snapshot="$legacy_config_dir/codex-week-snapshot.json"
 snapshot="$config_dir/beaver-meter-snapshot.json"
 if [[ -e "$snapshot" ]]; then
+  chmod 600 "$snapshot"
   print "Keeping existing BeaverMeter snapshot."
 elif [[ -f "$legacy_snapshot" ]]; then
   schema_version="$(/usr/bin/plutil -extract schemaVersion raw -o - "$legacy_snapshot" 2>/dev/null || true)"

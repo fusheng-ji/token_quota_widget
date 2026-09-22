@@ -7,29 +7,45 @@ enum CodexTokenAggregation {
         let totals: CodexTokenTotals?
         let remoteUniqueTotals: CodexTokenTotals?
         let changed: Bool
+
+        func resolvingLocalTotals(_ legacyTotals: CodexTokenTotals?) throws -> CodexTokenTotals {
+            let localTotals = local.totals ?? .zero
+            let selectedLocal: CodexTokenTotals
+            if let legacyTotals, legacyTotals.totalTokens > localTotals.totalTokens {
+                selectedLocal = legacyTotals
+            } else {
+                selectedLocal = localTotals
+            }
+            return try CodexTokenAggregation.adding(selectedLocal, remoteUniqueTotals)
+        }
     }
 
     static func collect(
         now: Date,
         environment: [String: String],
-        localCacheURL: URL?
+        localCacheURL: URL?,
+        calendar: Calendar = .current
     ) throws -> Result {
-        let local = try CodexUsageRecordScanner.collect(
-            codexHomePath: environment["CODEX_HOME"],
-            now: now,
-            calendar: .current,
-            cacheURL: localCacheURL
-        )
-        let remoteCacheURL = (localCacheURL
-            ?? UsageSnapshot.snapshotURL.deletingLastPathComponent()
-                .appendingPathComponent("beaver-meter-codex-scan-v2.json"))
-            .deletingLastPathComponent()
-            .appendingPathComponent("beaver-meter-codex-remote-scan-v1.json")
+        let local: CodexUsageRecordScanner.Result
+        do {
+            local = try CodexUsageRecordScanner.collect(
+                codexHomePath: environment["CODEX_HOME"],
+                now: now,
+                calendar: calendar,
+                cacheURL: localCacheURL
+            )
+        } catch {
+            local = .init(
+                totals: nil, changed: false, usageByResponseHash: [:], sessionHashes: [],
+                complete: false, message: "Local Codex records could not be refreshed."
+            )
+        }
+        let locations = CodexCacheLocations(snapshotURL: localCacheURL ?? UsageSnapshot.snapshotURL)
         let remote = CodexRemoteUsageCollector.collect(
             environment: environment,
             now: now,
-            calendar: .current,
-            cacheURL: remoteCacheURL
+            calendar: calendar,
+            cacheURL: locations.remote
         )
 
         var merged = local.usageByResponseHash
@@ -43,7 +59,10 @@ enum CodexTokenAggregation {
             local: local,
             remote: remote,
             totals: try CodexUsageRecordScanner.totals(for: merged, sessionHashes: sessions),
-            remoteUniqueTotals: try CodexUsageRecordScanner.totals(for: remoteUnique),
+            remoteUniqueTotals: try CodexUsageRecordScanner.totals(
+                for: remoteUnique,
+                sessionHashes: Set(remoteUnique.values.map(\.sessionHash)).subtracting(local.sessionHashes)
+            ),
             changed: local.changed || remote.changed
         )
     }
@@ -61,8 +80,6 @@ enum CodexTokenAggregation {
     }
 
     private static func adding(_ lhs: Int, _ rhs: Int) throws -> Int {
-        let result = lhs.addingReportingOverflow(rhs)
-        guard !result.overflow else { throw CocoaError(.coderReadCorrupt) }
-        return result.partialValue
+        try CodexUsageSupport.adding(lhs, rhs)
     }
 }

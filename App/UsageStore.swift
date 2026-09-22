@@ -33,7 +33,7 @@ enum DeepSeekConnectionState: Equatable {
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var snapshot: UsageSnapshot
-    @Published private(set) var isRefreshing = false
+    @Published private var refreshSchedule = RefreshSchedule()
     @Published private(set) var refreshError: String?
     @Published private(set) var deepSeekConnectionState: DeepSeekConnectionState = .idle
 
@@ -41,11 +41,14 @@ final class UsageStore: ObservableObject {
     private var deepSeekConnectionTask: Task<Void, Never>?
     private var snapshotObservationTask: Task<Void, Never>?
     private var codexActivityRefreshTask: Task<Void, Never>?
-    private var isCodexActivityRefreshing = false
-    private var refreshQueued = false
+    private var refreshTask: Task<Void, Never>?
+    private let allowsLiveUpdates: Bool
+
+    var isRefreshing: Bool { refreshSchedule.showsFullRefresh }
 
     init(snapshot: UsageSnapshot = .load(), observesSnapshotChanges: Bool = true) {
         self.snapshot = snapshot
+        allowsLiveUpdates = observesSnapshotChanges
         if observesSnapshotChanges {
             snapshotObservationTask = Task { @MainActor [weak self] in
                 while !Task.isCancelled {
@@ -64,10 +67,17 @@ final class UsageStore: ObservableObject {
                     } catch {
                         return
                     }
-                    await self?.refreshCodexActivity()
+                    self?.requestRefresh(.codex)
                 }
             }
         }
+    }
+
+    deinit {
+        snapshotObservationTask?.cancel()
+        codexActivityRefreshTask?.cancel()
+        refreshTask?.cancel()
+        deepSeekConnectionTask?.cancel()
     }
 
     private func adoptNewerSnapshotFromDisk() {
@@ -87,13 +97,14 @@ final class UsageStore: ObservableObject {
 
     var menuBarAccessibilityText: String {
         let values = menuBarValues
-        return "Codex today \(values.tokens) tokens, Cursor latest call \(values.latestCost), " +
+        let codex = CodexDailyTokenPresentation(snapshot.codexTokens)
+        return "\(codex.accessibilityText), Cursor latest call \(values.latestCost), " +
             "DeepSeek balance \(values.deepSeekBalance)"
     }
 
     private var menuBarValues: (tokens: String, latestCost: String, deepSeekBalance: String) {
         (
-            UsageFormatting.tokens(snapshot.codexTokens.value?.totalTokens),
+            CodexDailyTokenPresentation(snapshot.codexTokens).value,
             UsageFormatting.usd(
                 snapshot.cursorCosts.value?.latestEvent?.costUSD,
                 minimumDigits: 2,
@@ -121,82 +132,66 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh() {
-        guard !isRefreshing, !isCodexActivityRefreshing else {
-            refreshQueued = true
-            return
-        }
-        isRefreshing = true
-        refreshError = nil
-        lastAutomaticRefresh = .now
+        requestRefresh(.all)
+    }
 
+    private func requestRefresh(_ mode: RefreshSchedule.Mode) {
+        guard allowsLiveUpdates, let next = refreshSchedule.request(mode) else { return }
+        startRefresh(next)
+    }
+
+    private func startRefresh(_ mode: RefreshSchedule.Mode) {
+        if mode == .all {
+            refreshError = nil
+            lastAutomaticRefresh = .now
+        }
         let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
         let script = Bundle.main.url(forResource: "collect_beaver_meter", withExtension: "sh")
         let output = UsageSnapshot.snapshotURL.path
-
-        Task {
-            let result = await Task.detached(priority: .utility) {
-                CollectorProcessRunner.refresh(helper: helper, script: script, output: output)
-            }.value
-
-            snapshot = UsageSnapshot.load()
-            isRefreshing = false
-            if result.status == 0 {
-                WidgetCenter.shared.reloadAllTimelines()
-                if deepSeekConnectionState == .loadingUsage {
-                    switch snapshot.deepseekUsage.status {
-                    case .ready:
-                        deepSeekConnectionState = .connected
-                    case .stale:
-                        deepSeekConnectionState = .failed(
-                            snapshot.deepseekUsage.message ?? "DeepSeek refresh failed; cached data is shown."
-                        )
-                    default:
-                        deepSeekConnectionState = .failed(
-                            snapshot.deepseekUsage.message ?? "Could not load DeepSeek usage."
-                        )
+        refreshTask = Task { [weak self] in
+            let cancellation = SubprocessCancellation()
+            let result = await withTaskCancellationHandler {
+                await Task.detached(priority: .utility) {
+                    switch mode {
+                    case .all:
+                        CollectorProcessRunner.refresh(helper: helper, script: script, output: output, cancellation: cancellation)
+                    case .codex:
+                        CollectorProcessRunner.refreshCodexTokens(helper: helper, script: script, output: output, cancellation: cancellation)
                     }
-                }
-            } else {
-                refreshError = result.message.isEmpty
-                    ? "Refresh failed; the previous data was preserved."
-                    : result.message
-                if deepSeekConnectionState == .loadingUsage {
-                    deepSeekConnectionState = .failed(
-                        result.message.isEmpty ? "Could not load DeepSeek usage." : result.message
-                    )
-                }
+                }.value
+            } onCancel: {
+                cancellation.cancel()
             }
-            if refreshQueued {
-                refreshQueued = false
-                refresh()
-            }
+            guard !Task.isCancelled else { return }
+            self?.finishRefresh(mode, result: result)
         }
     }
 
-    private func refreshCodexActivity() async {
-        guard !isRefreshing, !isCodexActivityRefreshing else { return }
-        isCodexActivityRefreshing = true
-        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
-        let script = Bundle.main.url(forResource: "collect_beaver_meter", withExtension: "sh")
-        let output = UsageSnapshot.snapshotURL.path
-        let result = await Task.detached(priority: .utility) {
-            CollectorProcessRunner.refreshCodexTokens(
-                helper: helper,
-                script: script,
-                output: output
-            )
-        }.value
-        isCodexActivityRefreshing = false
-        if result.status == 0 {
-            adoptNewerSnapshotFromDisk()
+    private func finishRefresh(_ mode: RefreshSchedule.Mode, result: CollectorProcessResult) {
+        // Only a newer snapshot changes the UI or requests a WidgetKit timeline.
+        adoptNewerSnapshotFromDisk()
+        if result.status != 0 {
+            refreshError = result.message.isEmpty
+                ? "Refresh failed; the previous data was preserved."
+                : result.message
+        } else if mode == .all {
+            refreshError = nil
         }
-        if refreshQueued {
-            refreshQueued = false
-            refresh()
+        if mode == .all, deepSeekConnectionState == .loadingUsage {
+            if result.status == 0, snapshot.deepseekUsage.status == .ready {
+                deepSeekConnectionState = .connected
+            } else {
+                deepSeekConnectionState = .failed(
+                    refreshError ?? snapshot.deepseekUsage.message ?? "Could not load DeepSeek usage."
+                )
+            }
         }
+        refreshTask = nil
+        if let next = refreshSchedule.finish() { startRefresh(next) }
     }
 
     func connectDeepSeekInBrowser() {
+        guard allowsLiveUpdates else { return }
         guard let url = URL(string: "https://platform.deepseek.com/usage") else { return }
         guard NSWorkspace.shared.open(url) else {
             deepSeekConnectionState = .failed("Could not open the system browser.")
@@ -207,6 +202,7 @@ final class UsageStore: ObservableObject {
     }
 
     func checkDeepSeekBrowserSession() {
+        guard allowsLiveUpdates else { return }
         deepSeekConnectionState = .checkingBrowser
         beginDeepSeekBrowserImport()
     }
@@ -216,62 +212,56 @@ final class UsageStore: ObservableObject {
         let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/BeaverMeterCollector")
 
         deepSeekConnectionTask = Task { [weak self] in
-            guard let self else { return }
-            for _ in 0..<100 {
-                guard !Task.isCancelled else { return }
-                let result = await Task.detached(priority: .utility) {
-                    CollectorProcessRunner.importBrowserSession(helper: helper)
-                }.value
-
-                guard !Task.isCancelled else { return }
-                if result.status == 0 {
-                    self.deepSeekConnectionState = .loadingUsage
-                    self.refresh()
-                    return
-                }
-                if result.status != 3 {
-                    self.deepSeekConnectionState = .failed(
-                        result.message.isEmpty
-                            ? "Could not import the DeepSeek browser session."
-                            : result.message
-                    )
-                    return
-                }
-
-                switch DeepSeekSafariSessionReader.readToken() {
-                case let .token(token):
-                    let safariResult = await Task.detached(priority: .utility) {
-                        CollectorProcessRunner.importToken(helper: helper, token: token)
+            let cancellation = SubprocessCancellation()
+            await withTaskCancellationHandler {
+                for _ in 0..<100 {
+                    guard !Task.isCancelled, self != nil else { return }
+                    let result = await Task.detached(priority: .utility) {
+                        CollectorProcessRunner.importBrowserSession(helper: helper, cancellation: cancellation)
                     }.value
-                    if safariResult.status == 0 {
-                        self.deepSeekConnectionState = .loadingUsage
-                        self.refresh()
-                        return
-                    }
-                    if safariResult.status != 3 {
-                        self.deepSeekConnectionState = .failed(
-                            safariResult.message.isEmpty
-                                ? "Could not validate the DeepSeek Safari session."
-                                : safariResult.message
-                        )
-                        return
-                    }
-                case .notFound:
-                    break
-                case let .unavailable(message):
-                    self.deepSeekConnectionState = .failed(message)
-                    return
-                }
+                    guard !Task.isCancelled else { return }
+                    if self?.handleDeepSeekImport(result) != false { return }
 
-                do {
-                    try await Task.sleep(nanoseconds: 3_000_000_000)
-                } catch {
-                    return
+                    switch DeepSeekSafariSessionReader.readToken() {
+                    case let .token(token):
+                        let safariResult = await Task.detached(priority: .utility) {
+                            CollectorProcessRunner.importToken(helper: helper, token: token, cancellation: cancellation)
+                        }.value
+                        guard !Task.isCancelled else { return }
+                        if self?.handleDeepSeekImport(safariResult) != false { return }
+                    case .notFound:
+                        break
+                    case let .unavailable(message):
+                        self?.deepSeekConnectionState = .failed(message)
+                        return
+                    }
+
+                    do {
+                        try await Task.sleep(for: .seconds(3))
+                    } catch {
+                        return
+                    }
                 }
+                self?.deepSeekConnectionState = .failed(
+                    "No signed-in DeepSeek session was found in the system browser."
+                )
+            } onCancel: {
+                cancellation.cancel()
             }
-            self.deepSeekConnectionState = .failed(
-                "No signed-in DeepSeek session was found in the system browser."
+        }
+    }
+
+    /// Exit codes distinguish a successful import, a pending login and a terminal failure.
+    private func handleDeepSeekImport(_ result: CollectorProcessResult) -> Bool {
+        if result.status == 3 { return false }
+        if result.status == 0 {
+            deepSeekConnectionState = .loadingUsage
+            refresh()
+        } else {
+            deepSeekConnectionState = .failed(
+                result.message.isEmpty ? "Could not import the DeepSeek browser session." : result.message
             )
         }
+        return true
     }
 }

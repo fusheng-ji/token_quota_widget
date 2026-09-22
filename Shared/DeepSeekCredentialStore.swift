@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 enum DeepSeekCredentialStore {
@@ -25,24 +24,7 @@ enum DeepSeekCredentialStore {
               clean.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
         else { throw CocoaError(.validationMissingMandatoryProperty) }
 
-        let manager = FileManager.default
-        let directory = tokenURL.deletingLastPathComponent()
-        try manager.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-
-        let temporary = directory.appendingPathComponent(".deepseek-token-\(UUID().uuidString).tmp")
-        try Data(clean.utf8).write(to: temporary, options: .withoutOverwriting)
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
-        guard Darwin.rename(temporary.path, tokenURL.path) == 0 else {
-            let code = errno
-            try? manager.removeItem(at: temporary)
-            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
-        }
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenURL.path)
+        try AtomicFileWriter.write(Data(clean.utf8), to: tokenURL, protectDirectory: true)
     }
 
     static func token(fromLocalStorageValue rawValue: String) -> String? {

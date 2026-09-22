@@ -1,71 +1,27 @@
 #!/bin/zsh
 set -euo pipefail
 
-installed_app="$HOME/Applications/BeaverMeter.app"
-installed_widget="$installed_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex"
-legacy_app="$HOME/Applications/CodexWeek.app"
-legacy_widget="$legacy_app/Contents/PlugIns/CodexWeekWidgetExtension.appex"
-lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
-
-unregister_other_beavermeter_apps() {
-  local registered_app
-  "$lsregister" -dump 2>/dev/null \
-    | sed -En 's/^[[:space:]]*path:[[:space:]]*(.*BeaverMeter\.app)[[:space:]]+\(0x[0-9A-Fa-f]+\)$/\1/p' \
-    | while IFS= read -r registered_app; do
-        if [[ "$registered_app" != "$installed_app" ]]; then
-          pluginkit -r "$registered_app/Contents/PlugIns/BeaverMeterWidgetExtension.appex" >/dev/null 2>&1 || true
-          "$lsregister" -u "$registered_app" >/dev/null 2>&1 || true
-        fi
-      done
-}
-
+source "${0:A:h}/lib/install_common.sh"
+bm_initialize
 if [[ ! -d "$installed_app" ]]; then
   print -u2 "BeaverMeter.app is not installed. Run ./scripts/install.sh first."
   exit 1
 fi
 
-pluginkit -r "$installed_widget" >/dev/null 2>&1 || true
-"$lsregister" -u "$installed_app" >/dev/null 2>&1 || true
-killall chronod >/dev/null 2>&1 || true
-for process_name in BeaverMeter BeaverMeterWidgetExtension; do
-  pkill -x "$process_name" >/dev/null 2>&1 || true
-done
-for process_name in BeaverMeter BeaverMeterWidgetExtension; do
-  for _ in {1..20}; do
-    pgrep -x "$process_name" >/dev/null 2>&1 || break
-    sleep 0.1
-  done
-  if pgrep -x "$process_name" >/dev/null 2>&1; then
-    pkill -KILL -x "$process_name" >/dev/null 2>&1 || true
-    sleep 0.2
-    if pgrep -x "$process_name" >/dev/null 2>&1; then
-      print -u2 "Could not stop $process_name while repairing WidgetKit."
-      exit 1
-    fi
+# Restore the installed registration even if stopping an old extension fails.
+repair_complete=0
+repair_cleanup() {
+  local exit_code=$?
+  if (( ! repair_complete )); then
+    bm_register_app "$installed_app" >/dev/null 2>&1 || true
   fi
-done
-
-# Removing this bundle ID first also clears stale Xcode DerivedData copies that
-# otherwise appear as duplicate entries in the macOS Widget gallery.
-if [[ -d "$legacy_widget" ]]; then
-  pluginkit -r "$legacy_widget" >/dev/null 2>&1 || true
-fi
-unregister_other_beavermeter_apps
-"$lsregister" -f -R -trusted "$installed_app"
-pluginkit -a "$installed_widget"
-"$lsregister" -gc >/dev/null 2>&1 || true
-killall chronod >/dev/null 2>&1 || true
-killall NotificationCenter >/dev/null 2>&1 || true
-launched=0
-for _ in {1..10}; do
-  if open "$installed_app"; then
-    launched=1
-    break
-  fi
-  sleep 0.5
-done
-if (( launched == 0 )); then
-  print -u2 "Could not relaunch BeaverMeter after refreshing WidgetKit."
-  exit 1
-fi
+  return "$exit_code"
+}
+trap repair_cleanup EXIT
+bm_stop_applications
+bm_unregister_other_apps
+bm_register_app "$installed_app"
+bm_refresh_widget_services
+bm_open_app "$installed_app"
+repair_complete=1
 print "BeaverMeter widget registration and caches were refreshed."
