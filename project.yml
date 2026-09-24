@@ -40,8 +40,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter
         PRODUCT_NAME: BeaverMeter
-        CURRENT_PROJECT_VERSION: 29
-        MARKETING_VERSION: 5.1.0
+        CURRENT_PROJECT_VERSION: 30
+        MARKETING_VERSION: 5.1.1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: BeaverMeter
@@ -68,6 +68,8 @@ targets:
             fi
           done
         basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/BeaverMeterCollector
   BeaverMeterCollector:
     type: tool
     platform: macOS
@@ -103,8 +105,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BEAVERMETER_BUNDLE_PREFIX}.beavermeter.widget
         PRODUCT_NAME: BeaverMeterWidgetExtension
-        CURRENT_PROJECT_VERSION: 29
-        MARKETING_VERSION: 5.1.0
+        CURRENT_PROJECT_VERSION: 30
+        MARKETING_VERSION: 5.1.1
         SKIP_INSTALL: YES
         ENABLE_APP_SANDBOX: YES
         CODE_SIGN_ENTITLEMENTS: Widget/BeaverMeterWidget.entitlements

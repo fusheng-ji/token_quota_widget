@@ -70,7 +70,8 @@ struct CodexCacheLocations {
     }
 
     var local: URL { directory.appendingPathComponent("beaver-meter-codex-scan-v2.json") }
-    var remote: URL { directory.appendingPathComponent("beaver-meter-codex-remote-scan-v1.json") }
+    var remote: URL { directory.appendingPathComponent("beaver-meter-codex-remote-scan-v2.json") }
+    var remoteV1: URL { directory.appendingPathComponent("beaver-meter-codex-remote-scan-v1.json") }
     var legacy: URL { directory.appendingPathComponent("beaver-meter-codex-legacy-v1.json") }
     var measurement: URL { directory.appendingPathComponent("beaver-meter-codex-measurement-v1.json") }
 }

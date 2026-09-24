@@ -209,6 +209,132 @@ final class CodexCollectionTests: XCTestCase {
         XCTAssertTrue(tomorrow.usageByResponseHash.isEmpty)
     }
 
+    func testMigratedRemoteRootsDeduplicateAndRetainExitedHome() throws {
+        let root = try workspace()
+        let fixture = root.appendingPathComponent("remote-v2.json")
+        let cache = root.appendingPathComponent("beaver-meter-codex-remote-scan-v2.json")
+        let configured = CodexUsageSupport.hash("/fixture/old")
+        let active = CodexUsageSupport.hash("/fixture/new")
+        let shared = CodexUsageSupport.hash("shared")
+        let unique = CodexUsageSupport.hash("unique")
+        func delta(_ records: [(String, Int)]) -> [String: Any] {
+            ["offset": 100, "reset": false, "records": records.map { response, input in
+                ["responseHash": response, "sessionHash": CodexUsageSupport.hash(response + "-session"),
+                 "timestamp": now.timeIntervalSince1970 - 120, "inputTokens": input,
+                 "cachedInputTokens": 0, "outputTokens": 0, "reasoningTokens": 0] as [String: Any]
+            }]
+        }
+        func rootResponse(_ file: String, _ records: [(String, Int)]) -> [String: Any] {
+            ["complete": true, "failedFiles": [], "activeFiles": [file], "files": [file: delta(records)]]
+        }
+        let first: [String: Any] = [
+            "schemaVersion": 2, "configuredRootHash": configured,
+            "activeRootHashes": [active], "discoveryComplete": true,
+            "roots": [configured: rootResponse("old-file", [(shared, 100)]),
+                      active: rootResponse("new-file", [(shared, 100), (unique, 300)])]
+        ]
+        try writeJSON(first, to: fixture)
+        let environment = ["CODEX_REMOTE_SSH_HOST": "fixture-host", "CODEX_REMOTE_ROOT": "/fixture/old",
+                           "CODEX_REMOTE_PYTHON": "/usr/bin/python3", "CODEX_REMOTE_RESPONSE_FIXTURE": fixture.path]
+        var result = CodexRemoteUsageCollector.collect(environment: environment, now: now,
+                                                        calendar: calendar, cacheURL: cache)
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(result.usageByResponseHash.count, 2)
+        XCTAssertEqual(result.usageByResponseHash.values.reduce(0) { $0 + $1.inputTokens }, 400)
+
+        let exited: [String: Any] = [
+            "schemaVersion": 2, "configuredRootHash": configured,
+            "activeRootHashes": [], "discoveryComplete": true,
+            "roots": [configured: ["complete": true, "failedFiles": [],
+                                   "activeFiles": ["old-file"], "files": [:]]]
+        ]
+        try writeJSON(exited, to: fixture)
+        result = CodexRemoteUsageCollector.collect(environment: environment, now: now.addingTimeInterval(30),
+                                                    calendar: calendar, cacheURL: cache)
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(result.usageByResponseHash.count, 2)
+        var discoveryFailed = exited
+        discoveryFailed["discoveryComplete"] = false
+        try writeJSON(discoveryFailed, to: fixture)
+        result = CodexRemoteUsageCollector.collect(environment: environment, now: now.addingTimeInterval(45),
+                                                    calendar: calendar, cacheURL: cache)
+        XCTAssertFalse(result.complete)
+        XCTAssertEqual(result.usageByResponseHash.count, 2)
+        var ambiguous = first
+        ambiguous["activeRootHashes"] = [configured, active]
+        try writeJSON(ambiguous, to: fixture)
+        result = CodexRemoteUsageCollector.collect(environment: environment, now: now.addingTimeInterval(60),
+                                                    calendar: calendar, cacheURL: cache)
+        XCTAssertFalse(result.complete)
+        XCTAssertTrue(result.message?.contains("Multiple active") == true)
+    }
+
+    func testSameDayV1RemoteCacheMigratesWithoutDroppingRecords() throws {
+        let root = try workspace()
+        let cache = root.appendingPathComponent("beaver-meter-codex-remote-scan-v2.json")
+        let fixture = root.appendingPathComponent("remote-v2.json")
+        let source = CodexUsageSupport.hash("fixture-host\u{0}/fixture/codex\u{0}/usr/bin/python3")
+        let old: [String: Any] = [
+            "schemaVersion": 1,
+            "dayStart": ISO8601DateFormatter().string(from: calendar.startOfDay(for: now)),
+            "sourceHash": source,
+            "files": ["previous-file": ["offset": 10, "records": [
+                CodexUsageSupport.hash("previous"): [
+                    "inputTokens": 240, "cachedInputTokens": 0, "outputTokens": 5,
+                    "reasoningTokens": 0, "sessionHash": CodexUsageSupport.hash("session")
+                ]]]]
+        ]
+        try writeJSON(old, to: root.appendingPathComponent("beaver-meter-codex-remote-scan-v1.json"))
+        try writeJSON(["schemaVersion": 2, "configuredRootHash": CodexUsageSupport.hash("/fixture/codex"),
+                       "activeRootHashes": [], "discoveryComplete": true,
+                       "roots": [CodexUsageSupport.hash("/fixture/codex"): [
+                           "complete": true, "failedFiles": [], "activeFiles": [], "files": [:]]]] as [String: Any],
+                      to: fixture)
+        let environment = ["CODEX_REMOTE_SSH_HOST": "fixture-host", "CODEX_REMOTE_ROOT": "/fixture/codex",
+                           "CODEX_REMOTE_PYTHON": "/usr/bin/python3", "CODEX_REMOTE_RESPONSE_FIXTURE": fixture.path]
+        let result = CodexRemoteUsageCollector.collect(environment: environment, now: now,
+                                                        calendar: calendar, cacheURL: cache)
+        XCTAssertEqual(result.usageByResponseHash.values.first?.inputTokens, 240)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
+    }
+
+    func testRemoteTimeoutRetainsSameDayCacheAndRecovers() throws {
+        let root = try workspace()
+        let fixture = root.appendingPathComponent("remote.json")
+        let cache = root.appendingPathComponent("beaver-meter-codex-remote-scan-v2.json")
+        try remoteFixture(to: fixture)
+        var environment = ["CODEX_REMOTE_SSH_HOST": "fixture-host", "CODEX_REMOTE_ROOT": "/fixture/codex",
+                           "CODEX_REMOTE_PYTHON": "/usr/bin/python3", "CODEX_REMOTE_RESPONSE_FIXTURE": fixture.path]
+        let first = CodexRemoteUsageCollector.collect(environment: environment, now: now,
+                                                       calendar: calendar, cacheURL: cache)
+        XCTAssertTrue(first.complete)
+        let ssh = root.appendingPathComponent("slow-ssh")
+        let marker = root.appendingPathComponent("ssh-started")
+        try Data("#!/bin/sh\n: > \"$BEAVERMETER_TIMEOUT_MARKER\"\nsleep 5\n".utf8).write(to: ssh)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: ssh.path)
+        environment.removeValue(forKey: "CODEX_REMOTE_RESPONSE_FIXTURE")
+        environment["BEAVERMETER_SSH"] = ssh.path
+        environment["BEAVERMETER_TIMEOUT_MARKER"] = marker.path
+        environment["BEAVERMETER_REMOTE_SCRIPT"] = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("scripts/remote_codex_usage.py").path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: environment["BEAVERMETER_REMOTE_SCRIPT"]!))
+        let startedAt = Date()
+        let timedOut = CodexRemoteUsageCollector.collect(environment: environment,
+                                                          now: now.addingTimeInterval(30), calendar: calendar,
+                                                          cacheURL: cache, timeout: 0.5)
+        XCTAssertFalse(timedOut.complete)
+        XCTAssertEqual(timedOut.usageByResponseHash.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
+        environment["CODEX_REMOTE_RESPONSE_FIXTURE"] = fixture.path
+        let recovered = CodexRemoteUsageCollector.collect(environment: environment,
+                                                           now: now.addingTimeInterval(60), calendar: calendar,
+                                                           cacheURL: cache)
+        XCTAssertTrue(recovered.complete)
+        XCTAssertEqual(recovered.usageByResponseHash.count, 1)
+    }
+
     func testFirstSSHFailureKeepsLocalReadingWithoutRealNetwork() async throws {
         let root = try workspace()
         let home = root.appendingPathComponent("home")
@@ -220,7 +346,8 @@ final class CodexCollectionTests: XCTestCase {
         let legacy = root.appendingPathComponent("legacy.json")
         try legacyFixture(to: legacy, total: 0)
         let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("scripts/remote_codex_usage.py")
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("scripts/remote_codex_usage.py")
         let environment = [
             "CODEX_HOME": home.path,
             "CODEX_LEGACY_TOKEN_FIXTURE": legacy.path,

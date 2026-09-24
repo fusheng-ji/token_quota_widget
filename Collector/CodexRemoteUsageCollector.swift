@@ -10,13 +10,23 @@ enum CodexRemoteUsageCollector {
         let message: String?
     }
 
-    private static let cacheSchemaVersion = 1
-    private static let timeout: TimeInterval = 30
+    private static let cacheSchemaVersion = 2
 
     private struct Cache: Codable {
         let schemaVersion: Int
         let dayStart: Date
         let sourceHash: String
+        var roots: [String: RootState]
+    }
+
+    private struct OldCache: Codable {
+        let schemaVersion: Int
+        let dayStart: Date
+        let sourceHash: String
+        var files: [String: FileState]
+    }
+
+    private struct RootState: Codable {
         var files: [String: FileState]
     }
 
@@ -28,6 +38,19 @@ enum CodexRemoteUsageCollector {
     }
 
     private struct RemoteResponse: Decodable {
+        let schemaVersion: Int?
+        let configuredRootHash: String?
+        let activeRootHashes: [String]?
+        let discoveryComplete: Bool?
+        let roots: [String: RootResponse]?
+        // Existing isolated SSH fixtures use the original single-root protocol.
+        let complete: Bool?
+        let failedFiles: [String]?
+        let activeFiles: [String]?
+        let files: [String: FileDelta]?
+    }
+
+    private struct RootResponse: Decodable {
         let complete: Bool
         let failedFiles: [String]
         let activeFiles: [String]
@@ -54,7 +77,8 @@ enum CodexRemoteUsageCollector {
         environment: [String: String],
         now: Date,
         calendar: Calendar,
-        cacheURL: URL
+        cacheURL: URL,
+        timeout: TimeInterval = 30
     ) -> Result {
         guard let host = nonempty(environment["CODEX_REMOTE_SSH_HOST"]) else {
             return Result(
@@ -85,12 +109,17 @@ enum CodexRemoteUsageCollector {
             && loaded?.sourceHash == sourceHash
         var cache = if cacheIsCurrent, let loaded {
             loaded
+        } else if let old = loadOldCache(from: cacheURL.deletingLastPathComponent()
+            .appendingPathComponent("beaver-meter-codex-remote-scan-v1.json")),
+                  old.schemaVersion == 1, old.dayStart == dayStart, old.sourceHash == sourceHash {
+            Cache(schemaVersion: cacheSchemaVersion, dayStart: dayStart, sourceHash: sourceHash,
+                  roots: [hash(root): RootState(files: old.files)])
         } else {
             Cache(
                 schemaVersion: cacheSchemaVersion,
                 dayStart: dayStart,
                 sourceHash: sourceHash,
-                files: [:]
+                roots: [:]
             )
         }
         let resetCache = !cacheIsCurrent
@@ -106,51 +135,76 @@ enum CodexRemoteUsageCollector {
                     python: python,
                     window: window,
                     cache: cache,
-                    environment: environment
+                    environment: environment,
+                    timeout: timeout
                 )
             }
             let response = try JSONDecoder().decode(RemoteResponse.self, from: responseData)
+            let configuredHash = hash(root)
+            let rootResponses: [String: RootResponse]
+            if let roots = response.roots, response.schemaVersion == 2 {
+                guard response.configuredRootHash == configuredHash else {
+                    throw CocoaError(.coderReadCorrupt)
+                }
+                rootResponses = roots
+            } else if let complete = response.complete,
+                      let failedFiles = response.failedFiles,
+                      let activeFiles = response.activeFiles,
+                      let files = response.files {
+                rootResponses = [configuredHash: RootResponse(
+                    complete: complete, failedFiles: failedFiles,
+                    activeFiles: activeFiles, files: files
+                )]
+            } else {
+                throw CocoaError(.coderReadCorrupt)
+            }
             var changed = resetCache
             var cacheChanged = resetCache
-            let activeFiles = Set(response.activeFiles)
-            var complete = response.complete && response.failedFiles.isEmpty
+            let activeRoots = response.activeRootHashes ?? []
+            var complete = (response.discoveryComplete ?? true) && activeRoots.count <= 1
             // Counts already observed today remain valid if logs are removed,
             // archived or temporarily inaccessible. Day/source changes reset them.
-            for (identity, delta) in response.files {
-                guard activeFiles.contains(identity), delta.offset >= 0 else {
-                    complete = false
-                    continue
-                }
-                var state = delta.reset ? .empty : (cache.files[identity] ?? .empty)
-                guard delta.reset || delta.offset >= state.offset else {
-                    complete = false
-                    continue
-                }
-                cacheChanged = cacheChanged || state.offset != delta.offset
-                cacheChanged = cacheChanged || delta.reset
-                for record in delta.records {
-                    guard window.contains(Date(timeIntervalSince1970: record.timestamp)),
-                          isSHA256(record.responseHash),
-                          isSHA256(record.sessionHash),
-                          record.inputTokens >= 0,
-                          record.cachedInputTokens >= 0,
-                          record.outputTokens >= 0,
-                          record.reasoningTokens >= 0
-                    else { complete = false; continue }
-                    if state.records[record.responseHash] == nil {
-                        changed = true
-                        cacheChanged = true
-                        state.records[record.responseHash] = .init(
-                            inputTokens: record.inputTokens,
-                            cachedInputTokens: record.cachedInputTokens,
-                            outputTokens: record.outputTokens,
-                            reasoningTokens: record.reasoningTokens,
-                            sessionHash: record.sessionHash
-                        )
+            for (rootHash, rootResponse) in rootResponses {
+                guard isSHA256(rootHash) else { complete = false; continue }
+                if !rootResponse.complete || !rootResponse.failedFiles.isEmpty { complete = false }
+                var rootState = cache.roots[rootHash] ?? RootState(files: [:])
+                let activeFiles = Set(rootResponse.activeFiles)
+                for (identity, delta) in rootResponse.files {
+                    guard activeFiles.contains(identity), delta.offset >= 0 else {
+                        complete = false
+                        continue
                     }
+                    var state = delta.reset ? .empty : (rootState.files[identity] ?? .empty)
+                    guard delta.reset || delta.offset >= state.offset else {
+                        complete = false
+                        continue
+                    }
+                    cacheChanged = cacheChanged || state.offset != delta.offset || delta.reset
+                    for record in delta.records {
+                        guard window.contains(Date(timeIntervalSince1970: record.timestamp)),
+                              isSHA256(record.responseHash),
+                              isSHA256(record.sessionHash),
+                              record.inputTokens >= 0,
+                              record.cachedInputTokens >= 0,
+                              record.outputTokens >= 0,
+                              record.reasoningTokens >= 0
+                        else { complete = false; continue }
+                        if state.records[record.responseHash] == nil {
+                            changed = true
+                            cacheChanged = true
+                            state.records[record.responseHash] = .init(
+                                inputTokens: record.inputTokens,
+                                cachedInputTokens: record.cachedInputTokens,
+                                outputTokens: record.outputTokens,
+                                reasoningTokens: record.reasoningTokens,
+                                sessionHash: record.sessionHash
+                            )
+                        }
+                    }
+                    state.offset = delta.offset
+                    rootState.files[identity] = state
                 }
-                state.offset = delta.offset
-                cache.files[identity] = state
+                cache.roots[rootHash] = rootState
             }
             if cacheChanged { try AtomicFileWriter.writeJSON(cache, to: cacheURL) }
             let records = mergedRecords(in: cache)
@@ -160,7 +214,9 @@ enum CodexRemoteUsageCollector {
                 changed: changed,
                 usageByResponseHash: records,
                 sessionHashes: Set(records.values.map(\.sessionHash)),
-                message: complete ? nil : "Some remote Codex records could not be refreshed; today's total includes cached remote usage."
+                message: complete ? nil : (activeRoots.count > 1
+                    ? "Multiple active remote Codex homes were found; today's total may be incomplete."
+                    : "Some remote Codex records could not be refreshed; today's total includes cached remote usage.")
             )
         } catch {
             let records = mergedRecords(in: cache)
@@ -183,7 +239,8 @@ enum CodexRemoteUsageCollector {
         python: String,
         window: CodexDayWindow,
         cache: Cache,
-        environment: [String: String]
+        environment: [String: String],
+        timeout: TimeInterval
     ) throws -> Data {
         guard isSafeHost(host), root.hasPrefix("/"), python.hasPrefix("/"),
               !root.contains("\n"), !python.contains("\n")
@@ -200,7 +257,7 @@ enum CodexRemoteUsageCollector {
             String(window.cutoff.timeIntervalSince1970),
         ].joined(separator: " ")
         let request = try JSONEncoder().encode([
-            "files": cache.files.mapValues(\.offset),
+            "roots": cache.roots.mapValues { ["files": $0.files.mapValues(\.offset)] },
         ])
         let ssh = nonempty(environment["BEAVERMETER_SSH"]) ?? "/usr/bin/ssh"
         let result = try SubprocessRunner.run(
@@ -231,14 +288,20 @@ enum CodexRemoteUsageCollector {
 
     private static func mergedRecords(in cache: Cache) -> [String: CodexUsageRecordScanner.AccumulatedUsage] {
         var records: [String: CodexUsageRecordScanner.AccumulatedUsage] = [:]
-        for state in cache.files.values {
-            for (hash, usage) in state.records where records[hash] == nil { records[hash] = usage }
+        for root in cache.roots.values {
+            for state in root.files.values {
+                for (hash, usage) in state.records where records[hash] == nil { records[hash] = usage }
+            }
         }
         return records
     }
 
     private static func loadCache(from url: URL) -> Cache? {
         CodexUsageSupport.load(Cache.self, from: url)
+    }
+
+    private static func loadOldCache(from url: URL) -> OldCache? {
+        CodexUsageSupport.load(OldCache.self, from: url)
     }
 
     private static func nonempty(_ value: String?) -> String? {

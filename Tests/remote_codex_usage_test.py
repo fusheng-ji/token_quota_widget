@@ -20,7 +20,7 @@ class RemoteCodexUsageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(os.path.realpath(self.temp.name))
         self.now = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc).timestamp()
         self.start = datetime(2026, 9, 23, 0, 0, tzinfo=timezone.utc).timestamp()
         self.end = self.start + 86400
@@ -116,6 +116,66 @@ class RemoteCodexUsageTests(unittest.TestCase):
         self.assertFalse(partial["complete"])
         self.assertIn(SCANNER.digest(str(bad)), partial["failedFiles"])
         self.assertEqual(len(partial["files"]), 1)
+
+    def test_discovers_only_own_codex_app_server_home_without_returning_environment(self):
+        proc = self.root / "proc" / "123"
+        proc.mkdir(parents=True)
+        (proc / "cmdline").write_bytes(b"/bin/codex\0app-server\0")
+        (proc / "environ").write_bytes(
+            f"CODEX_HOME={self.root / 'active'}\0SECRET=never-send-me\0".encode()
+        )
+        homes, complete = SCANNER.active_codex_homes(str(proc.parent))
+        self.assertTrue(complete)
+        self.assertEqual(homes, {os.path.realpath(self.root / "active")})
+        result = SCANNER.scan_sources(
+            str(self.root), self.start, self.end, self.now, {"roots": {}},
+            discover=lambda: (homes, complete),
+        )
+        self.assertEqual(len(result["roots"]), 2)
+        self.assertNotIn("CODEX_HOME", json.dumps(result))
+        self.assertNotIn("never-send-me", json.dumps(result))
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_discovery_failure_is_distinct_from_no_active_process(self):
+        homes, complete = SCANNER.active_codex_homes(str(self.root / "missing-proc"))
+        self.assertEqual(homes, set())
+        self.assertFalse(complete)
+        result = SCANNER.scan_sources(
+            str(self.root), self.start, self.end, self.now, {"roots": {}},
+            discover=lambda: (homes, complete),
+        )
+        self.assertFalse(result["discoveryComplete"])
+        self.assertEqual(result["activeRootHashes"], [])
+
+    def test_migrated_home_scans_both_roots_and_reports_ambiguity(self):
+        configured = self.root / "configured"
+        active = self.root / "migrated"
+        old = configured / "sessions" / "old.jsonl"
+        old.parent.mkdir(parents=True)
+        old.write_text(json.dumps(self.record("old")) + "\n")
+        os.utime(old, (self.now, self.now))
+        path = active / "sessions" / "new.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(self.record("new", input_tokens=300)) + "\n")
+        os.utime(path, (self.now, self.now))
+        first = SCANNER.scan_sources(
+            str(configured), self.start, self.end, self.now, {"roots": {}},
+            discover=lambda: ({str(active)}, True),
+        )
+        hashes = {SCANNER.digest(str(configured)), SCANNER.digest(os.path.realpath(active))}
+        self.assertEqual(set(first["roots"]), hashes)
+        self.assertEqual(sum(len(delta["records"]) for root in first["roots"].values()
+                             for delta in root["files"].values()), 2)
+        self.assertEqual(first["activeRootHashes"], [SCANNER.digest(os.path.realpath(active))])
+        second = SCANNER.scan_sources(
+            str(configured), self.start, self.end, self.now,
+            {"roots": {key: {"files": {identity: delta["offset"]
+                         for identity, delta in root["files"].items()}}
+                       for key, root in first["roots"].items()}},
+            discover=lambda: ({str(active), str(configured)}, True),
+        )
+        self.assertEqual(len(second["activeRootHashes"]), 2)
+        self.assertTrue(all(not root["files"] for root in second["roots"].values()))
 
 
 if __name__ == "__main__":

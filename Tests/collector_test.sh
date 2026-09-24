@@ -270,7 +270,7 @@ jq -e '
   .codexTokens.value.outputTokens == 30 and
   .codexTokens.value.sessionCount == 2
 ' "$remote_snapshot" >/dev/null
-remote_cache="$remote_case_dir/beaver-meter-codex-remote-scan-v1.json"
+remote_cache="$remote_case_dir/beaver-meter-codex-remote-scan-v2.json"
 [[ "$(stat -f '%Lp' "$remote_cache")" == "600" ]]
 if rg -q 'shared-response|shared-session|remote-unique|remote-session|fixture/codex' "$remote_cache"; then
   print -u2 "Remote Codex cache leaked an unhashed identifier."

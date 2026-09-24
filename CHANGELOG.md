@@ -6,6 +6,22 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [5.1.1] - 2026-09-24
+
+### Fixed
+
+- Remote Codex installations that migrate `CODEX_HOME` no longer leave the
+  menu-bar and Widget daily token total at the local-only value. The SSH
+  scanner reads the configured directory and the current user's active Codex
+  app-server home, deduplicates both with local responses, and retains same-day
+  records after the process exits.
+- Remote scan cache v2 isolates directories, accepts compatible same-day v1
+  data, and reports ambiguous active homes or read failures as incomplete.
+  Only hashed identifiers, timestamps, counters and completeness metadata
+  travel over SSH; prompts and credentials remain on the remote host.
+- Incremental Release builds now track the embedded collector as a build
+  output, so Xcode renews the outer app signature when the helper changes.
+
 ## [5.1.0] - 2026-09-23
 
 ### Added

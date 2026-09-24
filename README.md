@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS 14+"></a>
   <a href="https://www.swift.org/"><img src="https://img.shields.io/badge/Swift-5.0%20%2F%206.0-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Swift 5.0 / 6.0"></a>
-  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.1.0-4C7CF3?style=flat-square" alt="Version 5.1.0"></a>
+  <a href="https://github.com/fusheng-ji/token_quota_widget"><img src="https://img.shields.io/badge/version-5.1.1-4C7CF3?style=flat-square" alt="Version 5.1.1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square" alt="MIT License"></a>
 </p>
 
@@ -106,6 +106,11 @@ timestamps and token counts; prompts, responses and credentials never leave
 the remote host. Local and remote responses are deduplicated before display.
 When SSH is temporarily unavailable, BeaverMeter retains the last remote
 reading from the current local day and marks the total stale.
+The scanner also checks the current user's running Codex app-server for its
+active `CODEX_HOME`. If Codex moves its data, BeaverMeter reads both the
+configured directory and the active directory, deduplicates responses and
+retains today's discovered records after the process exits. Multiple different
+active homes are reported as incomplete rather than silently choosing one.
 
 Both refresh modes resolve the local legacy-format fallback before adding
 remote responses that do not occur in the local record set. Active and archived
@@ -326,6 +331,8 @@ fixtures and fake SSH/system commands rather than real account sessions.
 - **Codex has no token data:** run at least one local Codex session and refresh.
 - **Remote Codex is missing:** verify that the configured SSH alias works in a
   non-interactive terminal and that the remote Codex and Python paths still exist.
+  If Codex has moved its home, update `CODEX_REMOTE_ROOT` to the new path; active
+  app-server discovery keeps today's records visible during the move.
 - **DeepSeek says Connect:** choose **Connect in browser…** and finish signing in
   on the official page. Safari may request Automation permission; enable both
   developer settings described above, then use **Check now**.

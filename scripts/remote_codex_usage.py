@@ -159,6 +159,63 @@ def scan(root, day_start, day_end, cutoff, request):
     }
 
 
+def active_codex_homes(proc_root="/proc"):
+    """Inspect only this user's Codex app servers; never return their environment."""
+    homes = set()
+    complete = True
+    try:
+        processes = os.scandir(proc_root)
+    except OSError:
+        return homes, False
+    with processes:
+        for process in processes:
+            if not process.name.isdigit():
+                continue
+            try:
+                if process.stat(follow_symlinks=False).st_uid != os.geteuid():
+                    continue
+                with open(os.path.join(process.path, "cmdline"), "rb") as handle:
+                    args = handle.read(8192).split(b"\0")
+                if not args or os.path.basename(os.fsdecode(args[0])) != "codex" or b"app-server" not in args:
+                    continue
+                with open(os.path.join(process.path, "environ"), "rb") as handle:
+                    values = handle.read().split(b"\0")
+                home = next((os.fsdecode(item[len(b"CODEX_HOME="):]) for item in values
+                             if item.startswith(b"CODEX_HOME=")), None)
+                if home and os.path.isabs(home):
+                    homes.add(os.path.realpath(home))
+                else:
+                    complete = False
+            except FileNotFoundError:
+                continue  # A process exited during discovery.
+            except OSError:
+                complete = False
+    return homes, complete
+
+
+def scan_sources(configured_root, day_start, day_end, cutoff, request,
+                 discover=active_codex_homes):
+    active_homes, discovery_complete = discover()
+    active_homes = {os.path.realpath(root) for root in active_homes if os.path.isabs(root)}
+    configured_root = os.path.normpath(configured_root)
+    roots = sorted(active_homes | {configured_root})
+    prior_roots = request.get("roots", {}) if isinstance(request, dict) else {}
+    if not isinstance(prior_roots, dict):
+        prior_roots = {}
+    results = {}
+    for root in roots:
+        root_hash = digest(root)
+        prior = prior_roots.get(root_hash, {})
+        results[root_hash] = scan(root, day_start, day_end, cutoff, prior)
+    return {
+        "schemaVersion": 2,
+        "configuredRootHash": digest(configured_root),
+        "activeRootHashes": sorted(digest(root) for root in active_homes),
+        "discoveryComplete": discovery_complete,
+        "roots": results,
+    }
+
+
 def main():
     if len(sys.argv) != 5:
         raise SystemExit("usage: remote_codex_usage.py ROOT DAY_START DAY_END CUTOFF")
@@ -166,7 +223,7 @@ def main():
     if not all(map(math.isfinite, (day_start, day_end, cutoff))) or not day_start <= cutoff < day_end:
         raise SystemExit("invalid scan window")
     json.dump(
-        scan(sys.argv[1], day_start, day_end, cutoff, json.load(sys.stdin)),
+        scan_sources(sys.argv[1], day_start, day_end, cutoff, json.load(sys.stdin)),
         sys.stdout,
         separators=(",", ":"),
         sort_keys=True,
