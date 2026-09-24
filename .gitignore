@@ -15,3 +15,17 @@ preview/
 *.logarchive
 *.log
 *.tmp
+# Machine-local credentials and SSH material.
+.env
+.env.*
+config.env
+auth.json
+id_rsa
+id_ed25519
+id_ecdsa
+known_hosts
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
