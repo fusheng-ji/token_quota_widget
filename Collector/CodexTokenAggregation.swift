@@ -6,7 +6,6 @@ enum CodexTokenAggregation {
         let remote: CodexRemoteUsageCollector.Result
         let totals: CodexTokenTotals?
         let remoteUniqueTotals: CodexTokenTotals?
-        let changed: Bool
 
         func resolvingLocalTotals(_ legacyTotals: CodexTokenTotals?) throws -> CodexTokenTotals {
             let localTotals = local.totals ?? .zero
@@ -36,7 +35,7 @@ enum CodexTokenAggregation {
             )
         } catch {
             local = .init(
-                totals: nil, changed: false, usageByResponseHash: [:], sessionHashes: [],
+                totals: nil, usageByResponseHash: [:], sessionHashes: [],
                 complete: false, message: "Local Codex records could not be refreshed."
             )
         }
@@ -48,22 +47,45 @@ enum CodexTokenAggregation {
             cacheURL: locations.remote
         )
 
-        var merged = local.usageByResponseHash
-        var remoteUnique: [String: CodexUsageRecordScanner.AccumulatedUsage] = [:]
-        for (responseHash, usage) in remote.usageByResponseHash where merged[responseHash] == nil {
-            merged[responseHash] = usage
-            remoteUnique[responseHash] = usage
+        // The source collectors already deduplicate their own records. Sum only
+        // remote responses absent locally, without copying both record maps.
+        var inputTokens = 0
+        var cachedInputTokens = 0
+        var outputTokens = 0
+        var reasoningTokens = 0
+        var uniqueSessions: Set<String> = []
+        var hasUniqueRemote = false
+        for (responseHash, usage) in remote.usageByResponseHash
+        where local.usageByResponseHash[responseHash] == nil {
+            hasUniqueRemote = true
+            inputTokens = try adding(inputTokens, usage.inputTokens)
+            cachedInputTokens = try adding(cachedInputTokens, usage.cachedInputTokens)
+            outputTokens = try adding(outputTokens, usage.outputTokens)
+            reasoningTokens = try adding(reasoningTokens, usage.reasoningTokens)
+            uniqueSessions.insert(usage.sessionHash)
         }
-        let sessions = local.sessionHashes.union(remote.sessionHashes)
+        let remoteUniqueTotals: CodexTokenTotals? = if hasUniqueRemote {
+            CodexTokenTotals(
+                totalTokens: try adding(inputTokens, outputTokens),
+                inputTokens: inputTokens,
+                cachedInputTokens: cachedInputTokens,
+                outputTokens: outputTokens,
+                reasoningTokens: reasoningTokens,
+                sessionCount: uniqueSessions.subtracting(local.sessionHashes).count
+            )
+        } else {
+            nil
+        }
+        let totals: CodexTokenTotals? = if local.totals != nil || remoteUniqueTotals != nil {
+            try adding(local.totals ?? .zero, remoteUniqueTotals)
+        } else {
+            nil
+        }
         return Result(
             local: local,
             remote: remote,
-            totals: try CodexUsageRecordScanner.totals(for: merged, sessionHashes: sessions),
-            remoteUniqueTotals: try CodexUsageRecordScanner.totals(
-                for: remoteUnique,
-                sessionHashes: Set(remoteUnique.values.map(\.sessionHash)).subtracting(local.sessionHashes)
-            ),
-            changed: local.changed || remote.changed
+            totals: totals,
+            remoteUniqueTotals: remoteUniqueTotals
         )
     }
 

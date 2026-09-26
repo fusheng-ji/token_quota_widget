@@ -9,7 +9,6 @@ enum CodexUsageRecordScanner {
 
     struct Result {
         let totals: CodexTokenTotals?
-        let changed: Bool
         let usageByResponseHash: [String: AccumulatedUsage]
         let sessionHashes: Set<String>
         let complete: Bool
@@ -113,82 +112,76 @@ enum CodexUsageRecordScanner {
         let standardFormatter = ISO8601DateFormatter()
         standardFormatter.formatOptions = [.withInternetDateTime]
 
-        var knownResponses = Set(cache.files.values.flatMap { $0.records.keys })
-        var addedRecords = 0
-
         for candidate in candidates {
             var state = cache.files[candidate.identity] ?? .empty
-            if candidate.size < state.offset {
+            let previousState = cache.files[candidate.identity]
+            let truncated = candidate.size < state.offset
+            if truncated {
                 // The old byte range no longer exists. Rebuild this file's
                 // records from its replacement; the public same-source daily
                 // reading guards against a temporary lower total.
                 state = .empty
-                cacheChanged = true
-                cache.files[candidate.identity] = state
-                knownResponses = Set(cache.files.values.flatMap { $0.records.keys })
             }
-            guard candidate.size > state.offset else { continue }
+            guard candidate.size > state.offset else {
+                if truncated {
+                    cache.files[candidate.identity] = state
+                    cacheChanged = true
+                }
+                continue
+            }
 
-            let appendedData: Data
+            let baseOffset = state.offset
+            var retryOffset: Int?
+            var candidateChanged = false
+            let consumedCount: Int
             do {
                 let handle = try FileHandle(forReadingFrom: candidate.url)
                 defer { try? handle.close() }
                 try handle.seek(toOffset: UInt64(state.offset))
-                appendedData = try handle.readToEnd() ?? Data()
+                consumedCount = try forEachUsageRecord(in: handle) { record, lineOffset in
+                    guard record.type == "token_usage_record",
+                          let timestamp = fractionalFormatter.date(from: record.timestamp)
+                            ?? standardFormatter.date(from: record.timestamp),
+                          timestamp >= dayStart,
+                          timestamp < window.end
+                    else { return }
+                    guard timestamp <= window.cutoff else {
+                        // Retry records beyond this refresh's cutoff on the next scan.
+                        retryOffset = min(retryOffset ?? lineOffset, lineOffset)
+                        return
+                    }
+
+                    let usage = record.payload.usage
+                    guard usage.inputTokens >= 0,
+                          (usage.cachedInputTokens ?? 0) >= 0,
+                          usage.outputTokens >= 0,
+                          (usage.reasoningOutputTokens ?? 0) >= 0
+                    else { return }
+
+                    let responseIdentity = CodexUsageSupport.nonempty(record.payload.responseID)
+                        ?? "\(candidate.identity):\(baseOffset + lineOffset):\(record.timestamp)"
+                    let responseHash = hash(responseIdentity)
+                    guard state.records[responseHash] == nil else { return }
+
+                    state.records[responseHash] = AccumulatedUsage(
+                        inputTokens: usage.inputTokens,
+                        cachedInputTokens: usage.cachedInputTokens ?? 0,
+                        outputTokens: usage.outputTokens,
+                        reasoningTokens: usage.reasoningOutputTokens ?? 0,
+                        sessionHash: hash(CodexUsageSupport.nonempty(record.payload.sessionID) ?? candidate.identity)
+                    )
+                    candidateChanged = true
+                }
             } catch {
                 complete = false
                 continue
             }
-            guard let finalNewline = appendedData.lastIndex(of: 0x0A) else { continue }
-            let completeEnd = appendedData.index(after: finalNewline)
-            let completeData = appendedData[..<completeEnd]
-            let baseOffset = state.offset
-            var consumedCount = completeData.count
-
-            try forEachUsageRecord(in: completeData) { record, lineOffset in
-                guard record.type == "token_usage_record",
-                      let timestamp = fractionalFormatter.date(from: record.timestamp)
-                        ?? standardFormatter.date(from: record.timestamp),
-                      timestamp >= dayStart,
-                      timestamp < window.end
-                else { return }
-                guard timestamp <= window.cutoff else {
-                    // Retry records beyond this refresh's cutoff on the next scan.
-                    consumedCount = min(consumedCount, lineOffset)
-                    return
-                }
-
-                let usage = record.payload.usage
-                guard usage.inputTokens >= 0,
-                      (usage.cachedInputTokens ?? 0) >= 0,
-                      usage.outputTokens >= 0,
-                      (usage.reasoningOutputTokens ?? 0) >= 0
-                else { return }
-
-                let responseIdentity = CodexUsageSupport.nonempty(record.payload.responseID)
-                    ?? "\(candidate.identity):\(baseOffset + lineOffset):\(record.timestamp)"
-                let responseHash = hash(responseIdentity)
-                guard state.records[responseHash] == nil else { return }
-                if knownResponses.insert(responseHash).inserted {
-                    addedRecords += 1
-                }
-
-                state.records[responseHash] = AccumulatedUsage(
-                    inputTokens: usage.inputTokens,
-                    cachedInputTokens: usage.cachedInputTokens ?? 0,
-                    outputTokens: usage.outputTokens,
-                    reasoningTokens: usage.reasoningOutputTokens ?? 0,
-                    sessionHash: hash(CodexUsageSupport.nonempty(record.payload.sessionID) ?? candidate.identity)
-                )
-                cacheChanged = true
-            }
-
-            state.offset = try adding(state.offset, consumedCount)
-            cacheChanged = cacheChanged || state.offset != cache.files[candidate.identity]?.offset
+            state.offset = try adding(baseOffset, retryOffset ?? consumedCount)
+            cacheChanged = cacheChanged || truncated || candidateChanged || state.offset != previousState?.offset
             cache.files[candidate.identity] = state
         }
 
-        if let cacheURL, cacheChanged || addedRecords > 0 {
+        if let cacheURL, cacheChanged {
             do {
                 try AtomicFileWriter.writeJSON(cache, to: cacheURL)
             } catch {
@@ -202,11 +195,10 @@ enum CodexUsageRecordScanner {
                 usageByResponseHash[responseHash] = usage
             }
         }
-        let sessionHashes = Set(usageByResponseHash.values.map(\.sessionHash))
+        let sessionHashes = Set(usageByResponseHash.values.lazy.map(\.sessionHash))
         let totals = try totals(for: usageByResponseHash, sessionHashes: sessionHashes)
         return Result(
             totals: totals,
-            changed: resetCache || addedRecords > 0,
             usageByResponseHash: usageByResponseHash,
             sessionHashes: sessionHashes,
             complete: complete,
@@ -216,7 +208,7 @@ enum CodexUsageRecordScanner {
 
     static func totals(
         for records: [String: AccumulatedUsage],
-        sessionHashes: Set<String>? = nil
+        sessionHashes: Set<String>
     ) throws -> CodexTokenTotals? {
         guard !records.isEmpty else { return nil }
         var inputTokens = 0
@@ -235,7 +227,7 @@ enum CodexUsageRecordScanner {
             cachedInputTokens: cachedInputTokens,
             outputTokens: outputTokens,
             reasoningTokens: reasoningTokens,
-            sessionCount: (sessionHashes ?? Set(records.values.map(\.sessionHash))).count
+            sessionCount: sessionHashes.count
         )
     }
 
@@ -290,25 +282,30 @@ enum CodexUsageRecordScanner {
     }
 
     private static func forEachUsageRecord(
-        in data: Data.SubSequence,
+        in handle: FileHandle,
         body: (Record, Int) throws -> Void
-    ) throws {
-        var searchStart = data.startIndex
-        while searchStart < data.endIndex,
-              let markerRange = data.range(of: recordMarker, in: searchStart..<data.endIndex)
-        {
-            let lineStart = data[..<markerRange.lowerBound].lastIndex(of: 0x0A)
-                .map { data.index(after: $0) }
-                ?? data.startIndex
-            let lineEnd = data[markerRange.upperBound...].firstIndex(of: 0x0A)
-                ?? data.endIndex
-            if lineStart < lineEnd,
-               let record = try? JSONDecoder().decode(Record.self, from: data[lineStart..<lineEnd])
-            {
-                try body(record, data.distance(from: data.startIndex, to: lineStart))
+    ) throws -> Int {
+        let decoder = JSONDecoder()
+        var pending = Data()
+        var completedBytes = 0
+        while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+            var buffer = pending
+            buffer.append(chunk)
+            var lineStart = buffer.startIndex
+            while let newline = buffer[lineStart...].firstIndex(of: 0x0A) {
+                let line = buffer[lineStart..<newline]
+                if line.range(of: recordMarker) != nil,
+                   let record = try? decoder.decode(Record.self, from: line) {
+                    try body(record, completedBytes)
+                }
+                completedBytes = try adding(completedBytes, buffer.distance(
+                    from: lineStart, to: buffer.index(after: newline)
+                ))
+                lineStart = buffer.index(after: newline)
             }
-            searchStart = lineEnd < data.endIndex ? data.index(after: lineEnd) : data.endIndex
+            pending = Data(buffer[lineStart...])
         }
+        return completedBytes
     }
 
     private static func loadCache(from url: URL) -> ScanCache? {

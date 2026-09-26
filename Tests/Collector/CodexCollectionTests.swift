@@ -113,6 +113,34 @@ final class CodexCollectionTests: XCTestCase {
         XCTAssertEqual(result.totals?.totalTokens, 110)
     }
 
+    func testLocalScannerHandlesRecordsAcrossReadBoundaries() throws {
+        let root = try workspace()
+        let home = root.appendingPathComponent("home")
+        let file = home.appendingPathComponent("sessions/2026/09/23/large.jsonl")
+        let cache = root.appendingPathComponent("local-cache.json")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let noise = Data(("{\"type\":\"message\",\"body\":\"" + String(repeating: "x", count: 70_000) + "\"}\n").utf8)
+        try noise.write(to: file)
+        try appendRecord(to: file, responseID: "after-noise", input: 42)
+        var result = try CodexUsageRecordScanner.collect(codexHomePath: home.path, now: now,
+                                                          calendar: calendar, cacheURL: cache)
+        XCTAssertEqual(result.totals?.totalTokens, 42)
+
+        try appendRecord(to: file, responseID: "partial", input: 8, newline: false)
+        result = try CodexUsageRecordScanner.collect(codexHomePath: home.path, now: now,
+                                                     calendar: calendar, cacheURL: cache)
+        XCTAssertEqual(result.totals?.totalTokens, 42)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data([0x0A]))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
+        result = try CodexUsageRecordScanner.collect(codexHomePath: home.path, now: now,
+                                                     calendar: calendar, cacheURL: cache)
+        XCTAssertEqual(result.totals?.totalTokens, 50)
+    }
+
     func testLegacyLocalIsSelectedBeforeUniqueRemoteAndFailuresRetainSameDayCache() async throws {
         let root = try workspace()
         let home = root.appendingPathComponent("home")
@@ -175,6 +203,7 @@ final class CodexCollectionTests: XCTestCase {
         var result = try CodexTokenAggregation.collect(now: now, environment: environment,
                                                         localCacheURL: cache, calendar: calendar)
         XCTAssertEqual(result.totals?.totalTokens, 100)
+        XCTAssertEqual(result.totals?.sessionCount, 1)
         XCTAssertNil(result.remoteUniqueTotals)
 
         try remoteFixture(to: remote, responseID: "unique", input: 300, complete: false,

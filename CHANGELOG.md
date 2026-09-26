@@ -6,6 +6,15 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Local Codex logs now scan in bounded chunks and remote logs stream line by
+  line, reducing peak scan memory while preserving incremental offsets and
+  unfinished-line handling.
+- Daily local and remote totals now combine without copying both response maps;
+  duplicate response IDs also share one session count. Removed unused change
+  flags and their per-refresh response-ID set.
+
 ## [5.1.1] - 2026-09-24
 
 ### Fixed

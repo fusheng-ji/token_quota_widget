@@ -76,77 +76,71 @@ def scan(root, day_start, day_end, cutoff, request):
         try:
             with open(path, "rb") as handle:
                 handle.seek(offset)
-                appended = handle.read()
+                records = []
+                consumed = offset
+                retry_offset = None
+                while True:
+                    line_start = handle.tell()
+                    raw_line = handle.readline()
+                    if not raw_line or not raw_line.endswith(b"\n"):
+                        break  # Leave an unfinished line for the next refresh.
+                    consumed = handle.tell()
+                    line = raw_line.rstrip(b"\r\n")
+                    if b'"token_usage_record"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if not isinstance(record, dict) or record.get("type") != "token_usage_record":
+                        continue
+                    timestamp = parse_timestamp(record.get("timestamp"))
+                    payload = record.get("payload", {})
+                    if not isinstance(payload, dict):
+                        continue
+                    usage = payload.get("usage", {})
+                    if not isinstance(usage, dict):
+                        continue
+                    values = (
+                        usage.get("input_tokens"),
+                        usage.get("cached_input_tokens", 0),
+                        usage.get("output_tokens"),
+                        usage.get("reasoning_output_tokens", 0),
+                    )
+                    if (
+                        timestamp is None
+                        or timestamp < day_start
+                        or timestamp >= day_end
+                        or any(type(value) is not int or not 0 <= value <= (2**63 - 1) for value in values)
+                    ):
+                        continue
+                    if timestamp > cutoff:
+                        retry_offset = line_start if retry_offset is None else min(retry_offset, line_start)
+                        continue
+                    response_id = payload.get("response_id")
+                    if not isinstance(response_id, str) or not response_id:
+                        response_id = f"{identity}:{line_start}:{record.get('timestamp', '')}"
+                    session_id = payload.get("session_id")
+                    if not isinstance(session_id, str) or not session_id:
+                        session_id = identity
+                    records.append(
+                        {
+                            "responseHash": digest(response_id),
+                            "sessionHash": digest(session_id),
+                            "timestamp": timestamp,
+                            "inputTokens": values[0],
+                            "cachedInputTokens": values[1],
+                            "outputTokens": values[2],
+                            "reasoningTokens": values[3],
+                        }
+                    )
         except OSError:
             failed_files.add(identity)
             continue
-        final_newline = appended.rfind(b"\n")
-        if final_newline < 0 and not reset:
+        if consumed == offset and not reset:
             continue
-        complete = appended[: final_newline + 1]
-        consumed = len(complete)
-        records = []
-        relative_offset = 0
-        for raw_line in complete.splitlines(keepends=True):
-            line = raw_line.rstrip(b"\r\n")
-            if b'"token_usage_record"' not in line:
-                relative_offset += len(raw_line)
-                continue
-            try:
-                record = json.loads(line)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                relative_offset += len(raw_line)
-                continue
-            if not isinstance(record, dict) or record.get("type") != "token_usage_record":
-                relative_offset += len(raw_line)
-                continue
-            timestamp = parse_timestamp(record.get("timestamp"))
-            payload = record.get("payload", {})
-            if not isinstance(payload, dict):
-                relative_offset += len(raw_line)
-                continue
-            usage = payload.get("usage", {})
-            if not isinstance(usage, dict):
-                relative_offset += len(raw_line)
-                continue
-            values = (
-                usage.get("input_tokens"),
-                usage.get("cached_input_tokens", 0),
-                usage.get("output_tokens"),
-                usage.get("reasoning_output_tokens", 0),
-            )
-            if (
-                timestamp is None
-                or timestamp < day_start
-                or timestamp >= day_end
-                or any(type(value) is not int or not 0 <= value <= (2**63 - 1) for value in values)
-            ):
-                relative_offset += len(raw_line)
-                continue
-            if timestamp > cutoff:
-                consumed = min(consumed, relative_offset)
-                relative_offset += len(raw_line)
-                continue
-            response_id = payload.get("response_id")
-            if not isinstance(response_id, str) or not response_id:
-                response_id = f"{identity}:{offset + relative_offset}:{record.get('timestamp', '')}"
-            session_id = payload.get("session_id")
-            if not isinstance(session_id, str) or not session_id:
-                session_id = identity
-            records.append(
-                {
-                    "responseHash": digest(response_id),
-                    "sessionHash": digest(session_id),
-                    "timestamp": timestamp,
-                    "inputTokens": values[0],
-                    "cachedInputTokens": values[1],
-                    "outputTokens": values[2],
-                    "reasoningTokens": values[3],
-                }
-            )
-            relative_offset += len(raw_line)
         response_files[identity] = {
-            "offset": offset + consumed,
+            "offset": retry_offset if retry_offset is not None else consumed,
             "reset": reset,
             "records": records,
         }

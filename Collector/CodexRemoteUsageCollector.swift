@@ -4,9 +4,7 @@ enum CodexRemoteUsageCollector {
     struct Result {
         let configured: Bool
         let complete: Bool
-        let changed: Bool
         let usageByResponseHash: [String: CodexUsageRecordScanner.AccumulatedUsage]
-        let sessionHashes: Set<String>
         let message: String?
     }
 
@@ -84,9 +82,7 @@ enum CodexRemoteUsageCollector {
             return Result(
                 configured: false,
                 complete: true,
-                changed: false,
                 usageByResponseHash: [:],
-                sessionHashes: [],
                 message: nil
             )
         }
@@ -95,8 +91,8 @@ enum CodexRemoteUsageCollector {
               let window = try? CodexDayWindow(now: now, calendar: calendar)
         else {
             return Result(
-                configured: true, complete: false, changed: false,
-                usageByResponseHash: [:], sessionHashes: [],
+                configured: true, complete: false,
+                usageByResponseHash: [:],
                 message: "Remote Codex configuration is incomplete; specify a root and Python executable."
             )
         }
@@ -158,7 +154,6 @@ enum CodexRemoteUsageCollector {
             } else {
                 throw CocoaError(.coderReadCorrupt)
             }
-            var changed = resetCache
             var cacheChanged = resetCache
             let activeRoots = response.activeRootHashes ?? []
             var complete = (response.discoveryComplete ?? true) && activeRoots.count <= 1
@@ -190,7 +185,6 @@ enum CodexRemoteUsageCollector {
                               record.reasoningTokens >= 0
                         else { complete = false; continue }
                         if state.records[record.responseHash] == nil {
-                            changed = true
                             cacheChanged = true
                             state.records[record.responseHash] = .init(
                                 inputTokens: record.inputTokens,
@@ -211,9 +205,7 @@ enum CodexRemoteUsageCollector {
             return Result(
                 configured: true,
                 complete: complete,
-                changed: changed,
                 usageByResponseHash: records,
-                sessionHashes: Set(records.values.map(\.sessionHash)),
                 message: complete ? nil : (activeRoots.count > 1
                     ? "Multiple active remote Codex homes were found; today's total may be incomplete."
                     : "Some remote Codex records could not be refreshed; today's total includes cached remote usage.")
@@ -223,9 +215,7 @@ enum CodexRemoteUsageCollector {
             return Result(
                 configured: true,
                 complete: false,
-                changed: false,
                 usageByResponseHash: records,
-                sessionHashes: Set(records.values.map(\.sessionHash)),
                 message: records.isEmpty
                     ? "Remote Codex usage is unavailable; today's total includes local usage only."
                     : "Remote Codex refresh failed; today's total includes the last remote reading."

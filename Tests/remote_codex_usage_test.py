@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import tracemalloc
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,36 @@ class RemoteCodexUsageTests(unittest.TestCase):
         self.assertLess(delta["offset"], path.stat().st_size)
         second = self.scan({identity: delta["offset"]}, cutoff=self.start + 20 * 3600)
         self.assertEqual(len(second["files"][identity]["records"]), 1)
+
+    def test_large_non_usage_tail_is_scanned_with_bounded_memory(self):
+        path = self.root / "sessions" / "large.jsonl"
+        path.parent.mkdir(parents=True)
+        noise = b'{"type":"message","body":"' + b"x" * 32768 + b'"}\n'
+        with path.open("wb") as handle:
+            for _ in range(256):
+                handle.write(noise)
+            handle.write((json.dumps(self.record()) + "\n").encode())
+        os.utime(path, (self.now, self.now))
+        tracemalloc.start()
+        try:
+            result = self.scan()
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(sum(len(delta["records"]) for delta in result["files"].values()), 1)
+        self.assertLess(peak, 2 * 1024 * 1024)
+
+    def test_future_record_does_not_hide_later_valid_record(self):
+        path = self.rollout("sessions/future.jsonl", [
+            self.record("future", "2026-09-23T18:00:00Z"),
+            self.record("later-in-file", "2026-09-23T11:00:00Z"),
+        ])
+        first = self.scan()
+        identity, delta = next(iter(first["files"].items()))
+        self.assertEqual(len(delta["records"]), 1)
+        self.assertEqual(delta["offset"], 0)
+        second = self.scan({identity: delta["offset"]}, cutoff=self.start + 20 * 3600)
+        self.assertEqual(len(second["files"][identity]["records"]), 2)
 
     def test_missing_root_and_partial_stat_failure_report_incomplete(self):
         missing = SCANNER.scan(str(self.root / "missing"), self.start, self.end, self.now, {"files": {}})
